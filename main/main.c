@@ -15,6 +15,8 @@
 #include "wifi_manager.h"
 #include "api_server.h"
 
+#include "renfe_client.h"
+
 static const char *TAG = "RENFE";
 
 // Enviar texto directamente al USB.
@@ -205,6 +207,7 @@ void app_main(void)
 
     // Inicializar Wi-Fi usando NVS.
     ESP_ERROR_CHECK(wifi_manager_init());
+    ESP_ERROR_CHECK(renfe_client_start());
 
     // Crear consola USB independiente.
     BaseType_t result = xTaskCreate(

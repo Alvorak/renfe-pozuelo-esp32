@@ -1,4 +1,3 @@
-
 #include "api_server.h"
 
 #include "esp_http_server.h"
