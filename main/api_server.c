@@ -160,6 +160,18 @@ static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
     cJSON_AddNumberToObject(row, "delay_seconds", item->delay_seconds);
     cJSON_AddStringToObject(row, "source", "renfe_realtime");
     cJSON_AddStringToObject(row, "eta_method", method);
+    // Informacion opcional: si no hay posicion reciente, no inventarla.
+    int64_t position_age = now - item->position_timestamp;
+    if (item->has_position && position_age >= -30 &&
+        position_age <= SNAPSHOT_MAX_AGE_SECONDS) {
+        cJSON_AddStringToObject(row, "current_stop_id", item->current_stop_id);
+        cJSON_AddStringToObject(row, "current_stop_name", item->current_stop_name);
+        const char *status = item->current_status == 1 ? "STOPPED_AT" :
+                             item->current_status == 0 ? "INCOMING_AT" :
+                             item->current_status == 2 ? "IN_TRANSIT_TO" : "UNKNOWN";
+        cJSON_AddStringToObject(row, "current_status", status);
+        cJSON_AddNumberToObject(row, "position_age_seconds", (double)position_age);
+    }
     // Todavia no sabemos si otros trenes sin ETA podrian llegar antes.
     cJSON_AddBoolToObject(row, "arrival_order_confirmed", false);
     cJSON_AddItemToArray(departures, row);
@@ -232,8 +244,14 @@ static esp_err_t arrivals_get_handler(httpd_req_t *req)
 esp_err_t api_server_start(void)
 {
     if (s_server) {
-        // Si el WS fallo anteriormente, reintentar sin parar el REST.
-        if (!ws_server_is_running()) ws_server_start();
+        // Restaurar/reintentar el servidor WebSocket cuando REST ya funciona.
+        if (!ws_server_is_running()) {
+            esp_err_t ws_err = ws_server_start();
+            if (ws_err != ESP_OK) {
+                ESP_LOGE(TAG, "REST activo, pero WS no arranco: %s",
+                         esp_err_to_name(ws_err));
+            }
+        }
         return ESP_OK;
     }
 
@@ -278,12 +296,12 @@ esp_err_t api_server_start(void)
     ESP_LOGI(TAG, "Endpoint: GET /health");
     ESP_LOGI(TAG, "Endpoint: GET %s?limit=2", ARRIVALS_URI);
 
-    // Puerto independiente para no cambiar /health ni la API REST.
+    // Puerto 8000: WebSocket + API HTTP del configurador.
     esp_err_t ws_err = ws_server_start();
     if (ws_err != ESP_OK) {
-        ESP_LOGE(TAG, "HTTP funciona, pero WebSocket no arranco: %s",
+        ESP_LOGE(TAG, "REST activo, pero WS no arranco: %s",
                  esp_err_to_name(ws_err));
-        // Mantenemos HTTP operativo incluso si falta memoria para WS.
+        // REST sigue disponible aunque el servidor WS falle al iniciar.
     }
     return ESP_OK;
 }
@@ -291,7 +309,9 @@ esp_err_t api_server_start(void)
 esp_err_t api_server_stop(void)
 {
     esp_err_t ws_err = ws_server_stop();
-    if (ws_err != ESP_OK) ESP_LOGW(TAG, "Error deteniendo WS: %s", esp_err_to_name(ws_err));
+    if (ws_err != ESP_OK) {
+        ESP_LOGW(TAG, "Error deteniendo servidor WS: %s", esp_err_to_name(ws_err));
+    }
     if (!s_server) return ws_err;
     ESP_LOGI(TAG, "Deteniendo servidor HTTP...");
     esp_err_t err = httpd_stop(s_server);

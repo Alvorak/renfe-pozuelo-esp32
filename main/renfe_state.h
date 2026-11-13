@@ -19,6 +19,12 @@ typedef struct {
     int64_t estimated_unix;
     int delay_seconds;
     renfe_eta_source_t source;
+    // Posicion GTFS-RT asociada por tripId; NO modifica el calculo del ETA.
+    bool has_position;
+    char current_stop_id[32];
+    char current_stop_name[64];
+    int current_status;         // 0=INCOMING_AT, 1=STOPPED_AT, 2=IN_TRANSIT_TO
+    int64_t position_timestamp; // Epoch UTC del feed de vehiculos.
 } renfe_arrival_t;
 
 typedef struct {

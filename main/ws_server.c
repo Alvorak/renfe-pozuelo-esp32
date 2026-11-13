@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -15,6 +16,7 @@
 #include "freertos/task.h"
 
 #include "renfe_state.h"
+#include "tt_config_api.h"
 
 #ifndef CONFIG_HTTPD_WS_SUPPORT
 #error "US-06: activa CONFIG_HTTPD_WS_SUPPORT en idf.py menuconfig > Component config > HTTP Server"
@@ -22,7 +24,7 @@
 
 #define WS_PORT 8000
 #define WS_CONTROL_PORT 32769  // No reutilizar el ctrl_port del REST (32768).
-#define WS_MAX_SOCKETS 7 // 4 conexiones de usuario + 3 sockets reservados por HTTPD
+#define WS_MAX_SOCKETS 9 // Hasta 6 clientes; HTTPD reserva 3 sockets.
 #define WS_MAX_MESSAGE 16384
 #define WS_UPDATE_MS 20000
 #define WS_MAX_SNAPSHOT_AGE 180
@@ -84,8 +86,8 @@ static esp_err_t send_schedule(httpd_handle_t hd, int fd, int limit)
         return ESP_ERR_NO_MEM;
     }
 
+    size_t added = 0;
     if (fresh) {
-        size_t added = 0;
         for (size_t i = 0; i < snapshot.count && i < RENFE_ARRIVAL_MAX; ++i) {
             const renfe_arrival_t *arrival = &snapshot.arrivals[i];
             if (added >= (size_t)limit) break;
@@ -98,14 +100,25 @@ static esp_err_t send_schedule(httpd_handle_t hd, int fd, int limit)
             }
             bool ok = true;
             ok &= cJSON_AddStringToObject(trip, "tripId", arrival->trip_id) != NULL;
-            ok &= cJSON_AddStringToObject(trip, "stopId", "10002") != NULL;
+            ok &= cJSON_AddStringToObject(trip, "stopId", "renfe:10002") != NULL;
             ok &= cJSON_AddStringToObject(trip, "routeId",
-                                           arrival->line == 7 ? "C7" : "C10") != NULL;
+                                           arrival->line == 7 ? "renfe:C7" : "renfe:C10") != NULL;
             ok &= cJSON_AddStringToObject(trip, "routeName",
                                            arrival->line == 7 ? "C-7" : "C-10") != NULL;
             ok &= cJSON_AddStringToObject(trip, "stopName", "Pozuelo") != NULL;
-            // Equivalente al fallback del servidor Python cuando falta current_stop_name.
-            ok &= cJSON_AddStringToObject(trip, "headsign", "Sin posición") != NULL;
+            // La pantalla pinta headsign debajo del nombre de la linea.
+            // STOPPED_AT es estacion actual; los otros estados son destino siguiente.
+            char headsign[96] = "Sin posicion";
+            const int64_t position_age = now - arrival->position_timestamp;
+            if (arrival->has_position && arrival->current_stop_name[0] &&
+                position_age >= -30 && position_age <= WS_MAX_SNAPSHOT_AGE) {
+                const char *prefix = arrival->current_status == 1 ? "En " :
+                                     arrival->current_status == 0 ? "Llegando a " :
+                                     arrival->current_status == 2 ? "Hacia " : "Parada ";
+                snprintf(headsign, sizeof(headsign), "%s%s", prefix,
+                         arrival->current_stop_name);
+            }
+            ok &= cJSON_AddStringToObject(trip, "headsign", headsign) != NULL;
             ok &= cJSON_AddNumberToObject(trip, "arrivalTime",
                                            (double)arrival->estimated_unix) != NULL;
             ok &= cJSON_AddNumberToObject(trip, "departureTime",
@@ -121,6 +134,10 @@ static esp_err_t send_schedule(httpd_handle_t hd, int fd, int limit)
         }
     }
 
+    ESP_LOGI(TAG, "SCHEDULE fd=%d enviados=%u limite=%d snapshot=%s edad=%lld s",
+             fd, (unsigned)added, limit,
+             !available ? "ausente" : (fresh ? "vigente" : "caducado"),
+             (long long)age);
     // Cuando el snapshot ha caducado se envia trips:[], nunca un ETA inventado.
     char *message = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -185,6 +202,17 @@ static esp_err_t ws_uri_handler(httpd_req_t *req)
                      strcmp(event->valuestring, "schedule:subscribe") == 0 &&
                      cJSON_IsObject(data);
     int limit = subscribe ? parse_limit(data) : RENFE_ARRIVAL_MAX;
+    const cJSON *pairs = subscribe
+        ? cJSON_GetObjectItemCaseSensitive(data, "routeStopPairs") : NULL;
+    const char *pairs_text = cJSON_IsString(pairs) && pairs->valuestring
+        ? pairs->valuestring : "(ausente)";
+    // Igual que el servidor Python: la seleccion efectiva de viajes
+    // ya esta fijada en renfe_arrivals para Pozuelo, C-7 y C-10.
+    // NO filtramos usando routeStopPairs.
+    if (subscribe) {
+        ESP_LOGI(TAG, "SUBSCRIBE recibido fd=%d limit=%d pairs=%.160s",
+                 httpd_req_to_sockfd(req), limit, pairs_text);
+    }
     cJSON_Delete(root);
     if (!subscribe) return ESP_OK;
 
@@ -253,12 +281,18 @@ esp_err_t ws_server_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = WS_PORT;
     config.ctrl_port = WS_CONTROL_PORT;
-    config.max_uri_handlers = 2;
+    config.max_uri_handlers = 9;
+    config.uri_match_fn = httpd_uri_match_wildcard;
     config.max_open_sockets = WS_MAX_SOCKETS;
     config.stack_size = 8192;
-    config.lru_purge_enable = false;
-    config.recv_wait_timeout = 5;
-    config.send_wait_timeout = 5;
+    // El firmware Transit Tracker incluye User-Agent y X-Device-Id
+    // en la peticion de Upgrade; admitir cabeceras mas largas.
+    config.max_req_hdr_len = 4096;
+    // Permitir completar el Upgrade en redes Wi-Fi lentas.
+    config.backlog_conn = 5;
+    config.lru_purge_enable = true;
+    config.recv_wait_timeout = 10;
+    config.send_wait_timeout = 10;
 
     httpd_handle_t server = NULL;
     esp_err_t err = httpd_start(&server, &config);
@@ -281,6 +315,13 @@ esp_err_t ws_server_start(void)
         return err;
     }
 
+    // Register HTTP configuration endpoints on the same port as the WebSocket.
+    err = tt_config_api_register(server);
+    if (err != ESP_OK) {
+        httpd_stop(server);
+        return err;
+    }
+
     s_server = server;
     s_running = true;
     BaseType_t created = xTaskCreate(broadcast_task, "ws_broadcast", 3072,
@@ -294,8 +335,13 @@ esp_err_t ws_server_start(void)
         return ESP_ERR_NO_MEM;
     }
 
+    ESP_LOGI(TAG, "Servidor WS: sockets=%u cabeceras=%u recv_timeout=%d s",
+             (unsigned)config.max_open_sockets,
+             (unsigned)config.max_req_hdr_len,
+             config.recv_wait_timeout);
     ESP_LOGI(TAG, "WebSocket activo: ws://IP_DEL_ESP32:8000/");
     ESP_LOGI(TAG, "Protocolo: schedule:subscribe -> schedule + heartbeat");
+    ESP_LOGI(TAG, "Modo compatible con Python: Pozuelo C7/C10 sin filtro routeStopPairs");
     return ESP_OK;
 }
 

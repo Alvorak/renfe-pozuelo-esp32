@@ -2,6 +2,7 @@
 #include "gtfs_index.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "esp_log.h"
@@ -57,6 +58,63 @@ static bool vehicle_has_passed(const renfe_parse_result_t *vehicles,
         return false;
     }
     return false;
+}
+
+// Nombres de estaciones frecuentes del corredor; IDs publicados por Renfe/Adif.
+// Ante un ID desconocido mostramos su codigo, nunca inventamos un nombre.
+static const char *station_name(const char *stop_id)
+{
+    static const struct { const char *id; const char *name; } stops[] = {
+        {"10000", "Principe Pio"},
+        {"10001", "Aravaca"},
+        {"10002", "Pozuelo"},
+        {"10005", "Las Rozas"},
+        {"10007", "Majadahonda"},
+        {"10010", "El Barrial"},
+        {"10100", "Pinar Las Rozas"},
+        {"97100", "Pitis"},
+        {"97200", "Mirasierra"},
+        {"97201", "Ramon y Cajal"},
+        {"17000", "Chamartin"},
+        {"18000", "Atocha Cercanias"},
+        {"18001", "Recoletos"},
+        {"18002", "Nuevos Ministerios"}
+    };
+    for (size_t i = 0; i < sizeof(stops) / sizeof(stops[0]); ++i) {
+        if (strcmp(stop_id, stops[i].id) == 0) return stops[i].name;
+    }
+    return NULL;
+}
+
+// El feed "vehicle_positions" ya esta descargado en renfe_client.
+// Asociar solo el MISMO tripId, con sello de tiempo reciente.
+static void attach_position(renfe_arrival_t *item,
+                            const renfe_parse_result_t *vehicles,
+                            time_t now)
+{
+    if (!item || !vehicles) return;
+    const renfe_vehicle_t *best = NULL;
+    for (int i = 0; i < vehicles->candidates_count; ++i) {
+        const renfe_vehicle_t *vehicle = &vehicles->candidates[i];
+        if (strcmp(vehicle->trip_id, item->trip_id) != 0 ||
+            vehicle->stop_id[0] == '\0') continue;
+        const int64_t age = (int64_t)now - vehicle->timestamp;
+        if (vehicle->timestamp <= 0 || age < -30 || age > MAX_FEED_AGE_SECONDS)
+            continue;
+        if (!best || vehicle->timestamp > best->timestamp) best = vehicle;
+    }
+    if (!best) return;
+
+    item->has_position = true;
+    item->current_status = best->current_status;
+    item->position_timestamp = best->timestamp;
+    snprintf(item->current_stop_id, sizeof(item->current_stop_id), "%s", best->stop_id);
+    const char *name = station_name(best->stop_id);
+    if (name) {
+        snprintf(item->current_stop_name, sizeof(item->current_stop_name), "%s", name);
+    } else {
+        snprintf(item->current_stop_name, sizeof(item->current_stop_name), "Estacion %s", best->stop_id);
+    }
 }
 
 static void offer(renfe_snapshot_t *out, const renfe_arrival_t *item)
@@ -157,6 +215,7 @@ esp_err_t renfe_arrivals_calculate(time_t now,
             item.estimated_unix = eta;
             item.delay_seconds = (int)(eta - scheduled->arrival_unix);
             item.source = have_specific ? RENFE_ETA_STOP_TIME : RENFE_ETA_TRIP_DELAY;
+            attach_position(&item, vehicles, now);
             offer(output, &item);
             break;
         }
@@ -174,6 +233,13 @@ esp_err_t renfe_arrivals_calculate(time_t now,
                  (long long)(seconds > 0 ? (seconds + 59) / 60 : 0),
                  a->delay_seconds,
                  a->source == RENFE_ETA_STOP_TIME ? "parada" : "retraso_viaje");
+        if (a->has_position) {
+            ESP_LOGI(TAG, "  POSICION trip=%s parada=%s status=%d edad=%lld s",
+                     a->trip_id, a->current_stop_name, a->current_status,
+                     (long long)((int64_t)now - a->position_timestamp));
+        } else {
+            ESP_LOGI(TAG, "  POSICION trip=%s sin coincidencia reciente", a->trip_id);
+        }
     }
     return ESP_OK;
 }
