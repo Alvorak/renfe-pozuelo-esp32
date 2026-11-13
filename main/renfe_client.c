@@ -2,6 +2,8 @@
 #include "renfe_parser.h"
 #include "wifi_manager.h"
 #include "gtfs_index.h"
+#include "renfe_arrivals.h"
+#include "renfe_state.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -27,6 +29,8 @@
 #define RENFE_BUFFER_SIZE (512U * 1024U)
 
 static const char *TAG = "RENFE_CLIENT";
+static renfe_parse_result_t s_last_vehicles;
+static bool s_have_vehicles = false;
 
 typedef struct
 {
@@ -89,6 +93,7 @@ static esp_err_t http_event_handler(
 
 static esp_err_t download_vehicle_positions(void)
 {
+    s_have_vehicles = false;
     download_state_t state = {
         .capacity = RENFE_BUFFER_SIZE};
 
@@ -167,6 +172,8 @@ static esp_err_t download_vehicle_positions(void)
         if (err == ESP_OK)
         {
             ESP_LOGI(TAG, "Parser completado");
+            s_last_vehicles = result;
+            s_have_vehicles = true;
 
             int approaching_count = 0;
 
@@ -315,16 +322,12 @@ static esp_err_t download_vehicle_positions(void)
 
 static void probe_trip_updates(void)
 {
-    download_state_t state = {
-        .capacity = RENFE_BUFFER_SIZE};
-
-    state.buffer = heap_caps_malloc(
-        state.capacity,
-        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-
-    if (!state.buffer)
-    {
-        ESP_LOGE(TAG, "TRIP_UPDATES: sin PSRAM");
+    download_state_t state = {.capacity = RENFE_BUFFER_SIZE};
+    state.buffer = heap_caps_malloc(state.capacity,
+                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!state.buffer) {
+        ESP_LOGE(TAG, "TRIP_UPDATES: PSRAM insuficiente");
+        renfe_state_invalidate();
         return;
     }
 
@@ -337,365 +340,49 @@ static void probe_trip_updates(void)
         .timeout_ms = 20000,
         .buffer_size = 2048,
         .buffer_size_tx = 1024,
-        .disable_auto_redirect = true};
-
-    esp_http_client_handle_t client =
-        esp_http_client_init(&config);
-
-    if (!client)
-    {
+        .disable_auto_redirect = true
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&config);
+    if (!client) {
+        ESP_LOGE(TAG, "TRIP_UPDATES: error creando cliente HTTPS");
+        renfe_state_invalidate();
         free(state.buffer);
-        ESP_LOGE(TAG, "TRIP_UPDATES: error HTTPS");
         return;
     }
-
-    esp_http_client_set_header(
-        client, "Accept", "application/json");
-    esp_http_client_set_header(
-        client, "Accept-Encoding", "identity");
-
+    esp_http_client_set_header(client, "Accept", "application/json");
+    esp_http_client_set_header(client, "Accept-Encoding", "identity");
     ESP_LOGI(TAG, "TRIP_UPDATES: descargando...");
 
     esp_err_t err = esp_http_client_perform(client);
     int status = esp_http_client_get_status_code(client);
-    bool complete =
-        esp_http_client_is_complete_data_received(client);
-
-    if (err != ESP_OK || status != 200 ||
-        !complete || !state.finished ||
-        state.overflow || state.length == 0)
-    {
-
-        ESP_LOGE(
-            TAG,
-            "TRIP_UPDATES: descarga invalida HTTP=%d error=%s",
-            status,
-            esp_err_to_name(err));
-
-        goto cleanup;
-    }
-
-    state.buffer[state.length] = '\0';
-
-    ESP_LOGI(
-        TAG,
-        "TRIP_UPDATES: %u bytes",
-        (unsigned)state.length);
-
-    cJSON *root = cJSON_ParseWithLength(
-        state.buffer,
-        state.length);
-
-    if (!root)
-    {
-        ESP_LOGE(TAG, "TRIP_UPDATES: JSON invalido");
-        goto cleanup;
-    }
-
-    const cJSON *entities =
-        cJSON_GetObjectItemCaseSensitive(
-            root, "entity");
-
-    if (!cJSON_IsArray(entities))
-    {
-        ESP_LOGE(TAG, "TRIP_UPDATES: falta entity[]");
-        cJSON_Delete(root);
-        goto cleanup;
-    }
-
-    gtfs_arrival_t next[2] = {0};
-    size_t count = 0;
-
-    err = gtfs_index_get_next(
-        time(NULL), next, 2, &count);
-
-    if (err != ESP_OK)
-    {
-        ESP_LOGE(TAG, "TRIP_UPDATES: indice no disponible");
-        cJSON_Delete(root);
-        goto cleanup;
-    }
-
-    int matched = 0;
-    int total_updates = 0;
-
-    const cJSON *entity;
-
-    cJSON_ArrayForEach(entity, entities)
-    {
-        const cJSON *update =
-            cJSON_GetObjectItemCaseSensitive(
-                entity, "tripUpdate");
-
-        if (!cJSON_IsObject(update))
-        {
-            continue;
-        }
-
-        total_updates++;
-
-        const cJSON *trip =
-            cJSON_GetObjectItemCaseSensitive(
-                update, "trip");
-
-        const cJSON *trip_id =
-            cJSON_GetObjectItemCaseSensitive(
-                trip, "tripId");
-
-        if (!cJSON_IsString(trip_id))
-        {
-            continue;
-        }
-
-        for (size_t i = 0; i < count; i++)
-        {
-            if (strcmp(
-                    trip_id->valuestring,
-                    next[i].trip_id) != 0)
-            {
-                continue;
+    bool complete = esp_http_client_is_complete_data_received(client);
+    if (err != ESP_OK || status != 200 || !complete || !state.finished ||
+        state.overflow || state.length == 0) {
+        ESP_LOGE(TAG, "TRIP_UPDATES: fallo HTTP=%d err=%s overflow=%d",
+                 status, esp_err_to_name(err), (int)state.overflow);
+        renfe_state_invalidate();
+    } else {
+        state.buffer[state.length] = '\0';
+        ESP_LOGI(TAG, "TRIP_UPDATES: %u bytes", (unsigned)state.length);
+        cJSON *root = cJSON_ParseWithLength(state.buffer, state.length);
+        if (!root) {
+            ESP_LOGE(TAG, "TRIP_UPDATES: JSON invalido");
+            renfe_state_invalidate();
+        } else {
+            renfe_snapshot_t snapshot = {0};
+            err = renfe_arrivals_calculate(time(NULL), root,
+                     s_have_vehicles ? &s_last_vehicles : NULL, &snapshot);
+            if (err == ESP_OK) {
+                renfe_state_publish(&snapshot);
+                ESP_LOGI(TAG, "ESTADO: %u llegadas guardadas",
+                         (unsigned)snapshot.count);
+            } else {
+                ESP_LOGE(TAG, "ARRIVALS: error=%s", esp_err_to_name(err));
+                renfe_state_invalidate();
             }
-
-            matched++;
-
-            ESP_LOGI(
-                TAG,
-                "TRIP_UPDATES: MATCH C-%u %s",
-                (unsigned)next[i].line,
-                next[i].trip_id);
-
-            const cJSON *schedule_relation =
-                cJSON_GetObjectItemCaseSensitive(
-                    trip, "scheduleRelationship");
-
-            const cJSON *start_date =
-                cJSON_GetObjectItemCaseSensitive(
-                    trip, "startDate");
-
-            const cJSON *trip_delay =
-                cJSON_GetObjectItemCaseSensitive(
-                    update, "delay");
-
-            ESP_LOGI(
-                TAG,
-                "DEBUG: startDate=%s serviceDate=%u",
-                cJSON_IsString(start_date)
-                    ? start_date->valuestring
-                    : "NO DISPONIBLE",
-                (unsigned)next[i].service_date);
-
-            if (cJSON_IsString(schedule_relation))
-            {
-                ESP_LOGI(
-                    TAG,
-                    "DEBUG: scheduleRelationship=%s",
-                    schedule_relation->valuestring);
-            }
-            else if (cJSON_IsNumber(schedule_relation))
-            {
-                ESP_LOGI(
-                    TAG,
-                    "DEBUG: scheduleRelationship=%d",
-                    schedule_relation->valueint);
-            }
-
-            if (cJSON_IsNumber(trip_delay))
-            {
-                int delay_seconds = trip_delay->valueint;
-                ESP_LOGI(TAG, "DEBUG: tripDelay=%d segundos", delay_seconds);
-
-                // ETA provisional: horario + retraso comunicado.
-                // SOLO DIAGNOSTICO, no es una prediccion oficial de Pozuelo.
-                if (delay_seconds >= -3600 && delay_seconds <= 7200)
-                {
-                    int64_t estimate = next[i].arrival_unix +
-                                       (int64_t)delay_seconds;
-                    int64_t remaining = estimate - (int64_t)time(NULL);
-                    int64_t minutes = remaining >= 0
-                        ? (remaining + 59) / 60
-                        : -((-remaining + 59) / 60);
-
-                    ESP_LOGI(TAG, "ETA_PROVISIONAL: C-%u %s",
-                             (unsigned)next[i].line, next[i].trip_id);
-                    ESP_LOGI(TAG, "ETA_PROVISIONAL: horario=%lld retraso=%d",
-                             (long long)next[i].arrival_unix, delay_seconds);
-                    ESP_LOGI(TAG, "ETA_PROVISIONAL: llegada=%lld faltan=%lld min",
-                             (long long)estimate, (long long)minutes);
-                }
-                else
-                {
-                    ESP_LOGW(TAG, "ETA_PROVISIONAL: retraso fuera de rango");
-                }
-            }
-            else
-            {
-                ESP_LOGW(TAG, "ETA_PROVISIONAL: sin retraso de viaje");
-            }
-
-            const cJSON *debug_stops =
-                cJSON_GetObjectItemCaseSensitive(
-                    update, "stopTimeUpdate");
-
-            int stop_count = cJSON_IsArray(debug_stops)
-                                 ? cJSON_GetArraySize(debug_stops)
-                                 : 0;
-
-            ESP_LOGI(
-                TAG,
-                "DEBUG: stopTimeUpdate count=%d",
-                stop_count);
-
-            const cJSON *debug_stop;
-            int printed = 0;
-
-            cJSON_ArrayForEach(debug_stop, debug_stops)
-            {
-                if (printed++ >= 5)
-                {
-                    break;
-                }
-
-                const cJSON *sid =
-                    cJSON_GetObjectItemCaseSensitive(
-                        debug_stop, "stopId");
-
-                const cJSON *sequence =
-                    cJSON_GetObjectItemCaseSensitive(
-                        debug_stop, "stopSequence");
-
-                const cJSON *arr =
-                    cJSON_GetObjectItemCaseSensitive(
-                        debug_stop, "arrival");
-
-                const cJSON *dep =
-                    cJSON_GetObjectItemCaseSensitive(
-                        debug_stop, "departure");
-
-                const cJSON *arr_delay =
-                    cJSON_GetObjectItemCaseSensitive(
-                        arr, "delay");
-
-                const cJSON *arr_time =
-                    cJSON_GetObjectItemCaseSensitive(
-                        arr, "time");
-
-                ESP_LOGI(
-                    TAG,
-                    "DEBUG: stopId=%s seq=%d arrival=%d departure=%d",
-                    cJSON_IsString(sid)
-                        ? sid->valuestring
-                        : "(sin stopId)",
-                    cJSON_IsNumber(sequence)
-                        ? sequence->valueint
-                        : -1,
-                    cJSON_IsObject(arr),
-                    cJSON_IsObject(dep));
-
-                if (cJSON_IsNumber(arr_delay))
-                {
-                    ESP_LOGI(
-                        TAG,
-                        "DEBUG: arrival.delay=%d",
-                        arr_delay->valueint);
-                }
-
-                if (cJSON_IsNumber(arr_time))
-                {
-                    ESP_LOGI(
-                        TAG,
-                        "DEBUG: arrival.time=%.0f",
-                        arr_time->valuedouble);
-                }
-                else if (cJSON_IsString(arr_time))
-                {
-                    ESP_LOGI(
-                        TAG,
-                        "DEBUG: arrival.time=%s",
-                        arr_time->valuestring);
-                }
-            }
-
-            const cJSON *stops =
-                cJSON_GetObjectItemCaseSensitive(
-                    update, "stopTimeUpdate");
-
-            if (!cJSON_IsArray(stops))
-            {
-                ESP_LOGW(
-                    TAG,
-                    "TRIP_UPDATES: sin stopTimeUpdate[]");
-                break;
-            }
-
-            const cJSON *stop;
-
-            cJSON_ArrayForEach(stop, stops)
-            {
-                const cJSON *stop_id =
-                    cJSON_GetObjectItemCaseSensitive(
-                        stop, "stopId");
-
-                if (!cJSON_IsString(stop_id) ||
-                    strcmp(
-                        stop_id->valuestring,
-                        "10002") != 0)
-                {
-                    continue;
-                }
-
-                const cJSON *arrival =
-                    cJSON_GetObjectItemCaseSensitive(
-                        stop, "arrival");
-
-                const cJSON *arrival_time =
-                    cJSON_GetObjectItemCaseSensitive(
-                        arrival, "time");
-
-                const cJSON *delay =
-                    cJSON_GetObjectItemCaseSensitive(
-                        arrival, "delay");
-
-                ESP_LOGI(
-                    TAG,
-                    "TRIP_UPDATES: parada Pozuelo encontrada");
-
-                if (cJSON_IsNumber(arrival_time))
-                {
-                    ESP_LOGI(
-                        TAG,
-                        "TRIP_UPDATES: arrival.time=%.0f",
-                        arrival_time->valuedouble);
-                }
-                else if (cJSON_IsString(arrival_time))
-                {
-                    ESP_LOGI(
-                        TAG,
-                        "TRIP_UPDATES: arrival.time=%s",
-                        arrival_time->valuestring);
-                }
-
-                if (cJSON_IsNumber(delay))
-                {
-                    ESP_LOGI(
-                        TAG,
-                        "TRIP_UPDATES: delay=%d segundos",
-                        delay->valueint);
-                }
-            }
-
-            break;
+            cJSON_Delete(root);
         }
     }
-
-    ESP_LOGI(
-        TAG,
-        "TRIP_UPDATES: entidades=%d coincidencias=%d",
-        total_updates,
-        matched);
-
-    cJSON_Delete(root);
-
-cleanup:
     esp_http_client_cleanup(client);
     free(state.buffer);
 }
@@ -848,6 +535,8 @@ esp_err_t renfe_client_start(void)
 {
     // Configurar cJSON antes de iniciar la tarea.
     renfe_parser_init();
+    esp_err_t state_err = renfe_state_init();
+    if (state_err != ESP_OK) return state_err;
 
     BaseType_t result = xTaskCreate(
         renfe_task,

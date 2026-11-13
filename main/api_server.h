@@ -3,11 +3,11 @@
 #include <stdbool.h>
 #include "esp_err.h"
 
-// Inicia el servidor HTTP en el puerto 80.
+// Servidor REST local (puerto 80). Puede arrancar/parar cuando cambie el Wi-Fi.
 esp_err_t api_server_start(void);
-
-// Detiene el servidor y libera sus recursos.
 esp_err_t api_server_stop(void);
-
-// Indica si el servidor esta iniciado.
 bool api_server_is_running(void);
+
+// Alias por compatibilidad con posibles usos en main.c.
+bool api_server_is_started(void);
+bool api_server_is_active(void);
