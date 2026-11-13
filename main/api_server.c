@@ -13,6 +13,7 @@
 
 #include "renfe_state.h"
 #include "wifi_manager.h"
+#include "ws_server.h"
 
 #define API_PORT 80
 #define SNAPSHOT_MAX_AGE_SECONDS 180
@@ -77,6 +78,7 @@ static esp_err_t health_get_handler(httpd_req_t *req)
     cJSON_AddStringToObject(root, "status", "ok");
     cJSON_AddStringToObject(root, "service", "renfe-pozuelo-esp32");
     cJSON_AddBoolToObject(root, "wifi", wifi_manager_is_connected());
+    cJSON_AddBoolToObject(root, "websocket", ws_server_is_running());
     return send_json(req, root, "200 OK");
 }
 
@@ -229,7 +231,11 @@ static esp_err_t arrivals_get_handler(httpd_req_t *req)
 
 esp_err_t api_server_start(void)
 {
-    if (s_server) return ESP_OK;
+    if (s_server) {
+        // Si el WS fallo anteriormente, reintentar sin parar el REST.
+        if (!ws_server_is_running()) ws_server_start();
+        return ESP_OK;
+    }
 
     ESP_LOGI(TAG, "Iniciando servidor HTTP...");
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
@@ -271,12 +277,22 @@ esp_err_t api_server_start(void)
     ESP_LOGI(TAG, "Puerto: %d", API_PORT);
     ESP_LOGI(TAG, "Endpoint: GET /health");
     ESP_LOGI(TAG, "Endpoint: GET %s?limit=2", ARRIVALS_URI);
+
+    // Puerto independiente para no cambiar /health ni la API REST.
+    esp_err_t ws_err = ws_server_start();
+    if (ws_err != ESP_OK) {
+        ESP_LOGE(TAG, "HTTP funciona, pero WebSocket no arranco: %s",
+                 esp_err_to_name(ws_err));
+        // Mantenemos HTTP operativo incluso si falta memoria para WS.
+    }
     return ESP_OK;
 }
 
 esp_err_t api_server_stop(void)
 {
-    if (!s_server) return ESP_OK;
+    esp_err_t ws_err = ws_server_stop();
+    if (ws_err != ESP_OK) ESP_LOGW(TAG, "Error deteniendo WS: %s", esp_err_to_name(ws_err));
+    if (!s_server) return ws_err;
     ESP_LOGI(TAG, "Deteniendo servidor HTTP...");
     esp_err_t err = httpd_stop(s_server);
     if (err == ESP_OK) s_server = NULL;

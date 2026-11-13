@@ -3,6 +3,7 @@ idf_component_register(
         "main.c"
         "wifi_manager.c"
         "api_server.c"
+        "ws_server.c"
         "renfe_client.c"
         "renfe_parser.c"
         "gtfs_index.c"
