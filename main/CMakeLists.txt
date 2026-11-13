@@ -4,9 +4,10 @@ idf_component_register(
         "wifi_manager.c"
         "api_server.c"
         "renfe_client.c"
+        "renfe_parser.c"
+        "gtfs_index.c"
 
-    INCLUDE_DIRS
-        "."
+    INCLUDE_DIRS "."
 
     REQUIRES
         esp_wifi
@@ -17,4 +18,8 @@ idf_component_register(
         esp_http_server
         esp_http_client
         mbedtls
+        espressif__cjson
+
+    EMBED_FILES
+        "pozuelo_gtfs.bin"
 )
