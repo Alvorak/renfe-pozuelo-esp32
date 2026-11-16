@@ -1,6 +1,7 @@
 #include "renfe_arrivals.h"
 #include "gtfs_index.h"
 #include "gtfs_upstream.h"
+#include "renfe_station_names.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -111,10 +112,12 @@ static void attach_position(renfe_arrival_t *item,
     item->position_timestamp = best->timestamp;
     snprintf(item->current_stop_id, sizeof(item->current_stop_id), "%s", best->stop_id);
     const char *name = station_name(best->stop_id);
+    if (!name) name = renfe_station_name_lookup(best->stop_id);
     if (name) {
         snprintf(item->current_stop_name, sizeof(item->current_stop_name), "%s", name);
     } else {
-        snprintf(item->current_stop_name, sizeof(item->current_stop_name), "Estacion %s", best->stop_id);
+        // ID desconocido: no inventar una estacion ni mostrar un numero.
+        item->current_stop_name[0] = '\0';
     }
 }
 
