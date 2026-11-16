@@ -93,7 +93,8 @@ static esp_err_t http_event_handler(
 
 static esp_err_t download_vehicle_positions(void)
 {
-    s_have_vehicles = false;
+    // Conservar el ultimo feed si falla una descarga;
+    // attach_position comprueba su timestamp (max 180 s).
     download_state_t state = {
         .capacity = RENFE_BUFFER_SIZE};
 
@@ -162,7 +163,7 @@ static esp_err_t download_vehicle_positions(void)
             "HTTP 200 - %u bytes recibidos",
             (unsigned)state.length);
 
-        renfe_parse_result_t result;
+        static renfe_parse_result_t result;
 
         err = renfe_parse_vehicles(
             state.buffer,
@@ -327,7 +328,7 @@ static void probe_trip_updates(void)
                                    MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!state.buffer) {
         ESP_LOGE(TAG, "TRIP_UPDATES: PSRAM insuficiente");
-        renfe_state_invalidate();
+        ESP_LOGW(TAG, "Conservando snapshot anterior; WS lo caduca a 180 s");
         return;
     }
 
@@ -345,7 +346,7 @@ static void probe_trip_updates(void)
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {
         ESP_LOGE(TAG, "TRIP_UPDATES: error creando cliente HTTPS");
-        renfe_state_invalidate();
+        ESP_LOGW(TAG, "Conservando snapshot anterior; WS lo caduca a 180 s");
         free(state.buffer);
         return;
     }
@@ -360,14 +361,14 @@ static void probe_trip_updates(void)
         state.overflow || state.length == 0) {
         ESP_LOGE(TAG, "TRIP_UPDATES: fallo HTTP=%d err=%s overflow=%d",
                  status, esp_err_to_name(err), (int)state.overflow);
-        renfe_state_invalidate();
+        ESP_LOGW(TAG, "Conservando snapshot anterior; WS lo caduca a 180 s");
     } else {
         state.buffer[state.length] = '\0';
         ESP_LOGI(TAG, "TRIP_UPDATES: %u bytes", (unsigned)state.length);
         cJSON *root = cJSON_ParseWithLength(state.buffer, state.length);
         if (!root) {
             ESP_LOGE(TAG, "TRIP_UPDATES: JSON invalido");
-            renfe_state_invalidate();
+            ESP_LOGW(TAG, "Conservando snapshot anterior; WS lo caduca a 180 s");
         } else {
             renfe_snapshot_t snapshot = {0};
             err = renfe_arrivals_calculate(time(NULL), root,
@@ -378,7 +379,7 @@ static void probe_trip_updates(void)
                          (unsigned)snapshot.count);
             } else {
                 ESP_LOGE(TAG, "ARRIVALS: error=%s", esp_err_to_name(err));
-                renfe_state_invalidate();
+                ESP_LOGW(TAG, "Conservando snapshot anterior; WS lo caduca a 180 s");
             }
             cJSON_Delete(root);
         }

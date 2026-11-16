@@ -117,12 +117,6 @@ static const char *status_name(int status)
     }
 }
 
-static bool in_madrid(double lat, double lon)
-{
-    return lat >= 40.25 && lat <= 40.65 &&
-           lon >= -4.05 && lon <= -3.50;
-}
-
 static bool near_pozuelo(double lat, double lon)
 {
     double dlat = (lat - POZUELO_LAT) * 111.2;
@@ -226,11 +220,6 @@ esp_err_t renfe_parse_vehicles(
         double latitude = lat->valuedouble;
         double longitude = lon->valuedouble;
 
-        if (!in_madrid(latitude, longitude))
-        {
-            continue;
-        }
-
         const cJSON *label =
             cJSON_GetObjectItemCaseSensitive(
                 info, "label");
@@ -264,13 +253,10 @@ esp_err_t renfe_parse_vehicles(
             result->madrid_c7++;
         if (c10)
             result->madrid_c10++;
-
-        if (!near_pozuelo(latitude, longitude))
-        {
-            continue;
+        // La cercania solo contabiliza; nunca filtra los viajes.
+        if (near_pozuelo(latitude, longitude)) {
+            result->nearby_pozuelo++;
         }
-
-        result->nearby_pozuelo++;
 
         if (result->candidates_count >=
             RENFE_MAX_CANDIDATES)

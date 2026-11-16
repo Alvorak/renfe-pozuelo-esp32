@@ -164,7 +164,7 @@ static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
         item->source == RENFE_ETA_VEHICLE ? "renfe_estimated" :
         item->source == RENFE_ETA_CACHED ? "renfe_cached" : "renfe_realtime");
     cJSON_AddStringToObject(row, "route_color",
-        item->line == 7 ? "E53935" : "2E7D32");
+        item->line == 7 ? "E53935" : "C4D600");
     cJSON_AddStringToObject(row, "eta_method", method);
     // Informacion opcional: si no hay posicion reciente, no inventarla.
     int64_t position_age = now - item->position_timestamp;

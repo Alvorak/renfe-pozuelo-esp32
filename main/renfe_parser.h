@@ -5,8 +5,7 @@
 
 #include "esp_err.h"
 
-#define RENFE_MAX_CANDIDATES 24
-
+#define RENFE_MAX_CANDIDATES 64
 typedef struct {
     char trip_id[64];
     char route_id[32];
