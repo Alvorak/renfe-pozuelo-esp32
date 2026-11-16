@@ -51,7 +51,7 @@ def utc_madrid(d, seconds=0):
 def records(z, name):
     matches = [s for s in z.namelist() if s.rsplit('/', 1)[-1] == name]
     if len(matches) != 1:
-        if name == 'calendar.txt' and not matches:
+        if name in ('calendar.txt', 'calendar_dates.txt') and not matches:
             return iter(())
         raise ValueError(f'Expected one {name}, got {len(matches)}')
     def stream():
@@ -65,6 +65,14 @@ def read_zip(path, start_date, num_days):
     dates = [start_date + timedelta(days=k) for k in range(num_days)]
     end_date = dates[-1]
     with zipfile.ZipFile(path) as z:
+        # GTFS permits calendar.txt on its own, calendar_dates.txt on its own,
+        # or both together. It does not permit both to be missing.
+        present = {name.rsplit('/', 1)[-1] for name in z.namelist()}
+        if not ({'calendar.txt', 'calendar_dates.txt'} & present):
+            raise ValueError('GTFS requires calendar.txt or calendar_dates.txt')
+        print('GTFS calendar files:',
+              'calendar.txt=' + ('yes' if 'calendar.txt' in present else 'no'),
+              'calendar_dates.txt=' + ('yes' if 'calendar_dates.txt' in present else 'no'))
         # Renfe uses multiple route variants; use short_name, then trip suffix.
         route_lines = {}
         for r in records(z, 'routes.txt'):
