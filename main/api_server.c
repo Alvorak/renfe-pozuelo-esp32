@@ -130,8 +130,10 @@ static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
 
     const char *line = item->line == 7 ? "C-7" : "C-10";
     const char *route_id = item->line == 7 ? "C7" : "C10";
-    const char *method = (item->source == RENFE_ETA_STOP_TIME)
-        ? "stop_time_update" : "reported_delay";
+    const char *method = item->source == RENFE_ETA_STOP_TIME ? "stop_time_update" :
+        item->source == RENFE_ETA_PROPAGATED ? "propagated_delay" :
+        item->source == RENFE_ETA_VEHICLE ? "vehicle_and_schedule" :
+        item->source == RENFE_ETA_CACHED ? "last_prediction" : "reported_delay";
 
     char arrival_iso[32];
     char scheduled_iso[32];
@@ -158,7 +160,11 @@ static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
     cJSON_AddNumberToObject(row, "eta_seconds", (double)seconds);
     cJSON_AddNumberToObject(row, "eta_minutes", (double)minutes);
     cJSON_AddNumberToObject(row, "delay_seconds", item->delay_seconds);
-    cJSON_AddStringToObject(row, "source", "renfe_realtime");
+    cJSON_AddStringToObject(row, "source",
+        item->source == RENFE_ETA_VEHICLE ? "renfe_estimated" :
+        item->source == RENFE_ETA_CACHED ? "renfe_cached" : "renfe_realtime");
+    cJSON_AddStringToObject(row, "route_color",
+        item->line == 7 ? "E53935" : "2E7D32");
     cJSON_AddStringToObject(row, "eta_method", method);
     // Informacion opcional: si no hay posicion reciente, no inventarla.
     int64_t position_age = now - item->position_timestamp;

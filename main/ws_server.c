@@ -105,6 +105,8 @@ static esp_err_t send_schedule(httpd_handle_t hd, int fd, int limit)
                                            arrival->line == 7 ? "renfe:C7" : "renfe:C10") != NULL;
             ok &= cJSON_AddStringToObject(trip, "routeName",
                                            arrival->line == 7 ? "C-7" : "C-10") != NULL;
+            ok &= cJSON_AddStringToObject(trip, "routeColor",
+                arrival->line == 7 ? "E53935" : "2E7D32") != NULL;
             ok &= cJSON_AddStringToObject(trip, "stopName", "Pozuelo") != NULL;
             // La pantalla pinta headsign debajo del nombre de la linea.
             // STOPPED_AT es estacion actual; los otros estados son destino siguiente.

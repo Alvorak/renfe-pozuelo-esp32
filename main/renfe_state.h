@@ -8,7 +8,10 @@
 
 typedef enum {
     RENFE_ETA_STOP_TIME = 1,
-    RENFE_ETA_TRIP_DELAY = 2
+    RENFE_ETA_TRIP_DELAY = 2,
+    RENFE_ETA_PROPAGATED = 3,
+    RENFE_ETA_VEHICLE = 4,
+    RENFE_ETA_CACHED = 5
 } renfe_eta_source_t;
 
 typedef struct {

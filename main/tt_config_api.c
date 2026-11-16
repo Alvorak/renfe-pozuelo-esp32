@@ -36,9 +36,9 @@ static const char STOPS_JSON[] =
     "\"name\":\"Pozuelo\",\"lat\":40.44761,\"lon\":-3.80020}]";
 
 static const char ROUTES_JSON[] =
-    "[{\"routeId\":\"renfe:C7\",\"name\":\"C-7\",\"color\":null,"
+    "[{\"routeId\":\"renfe:C7\",\"name\":\"C-7\",\"color\":\"E53935\","
     "\"headsigns\":[\"Principe Pio\"]},"
-    "{\"routeId\":\"renfe:C10\",\"name\":\"C-10\",\"color\":null,"
+    "{\"routeId\":\"renfe:C10\",\"name\":\"C-10\",\"color\":\"2E7D32\","
     "\"headsigns\":[\"Principe Pio\"]}]";
 
 static void set_cors_headers(httpd_req_t *req)
@@ -127,6 +127,8 @@ static esp_err_t schedule_handler(httpd_req_t *req)
             cJSON_AddStringToObject(trip, "stopId", STOP_ID);
             cJSON_AddStringToObject(trip, "routeId", a->line == 7 ? "renfe:C7" : "renfe:C10");
             cJSON_AddStringToObject(trip, "routeName", a->line == 7 ? "C-7" : "C-10");
+            cJSON_AddStringToObject(trip, "routeColor",
+                a->line == 7 ? "E53935" : "2E7D32");
             cJSON_AddStringToObject(trip, "stopName", "Pozuelo");
             cJSON_AddStringToObject(trip, "headsign", "Principe Pio");
             cJSON_AddNumberToObject(trip, "arrivalTime", (double)a->estimated_unix);
