@@ -16,6 +16,7 @@
 #include "api_server.h"
 
 #include "renfe_client.h"
+#include "gtfs_auto.h"
 
 static const char *TAG = "RENFE";
 
@@ -206,8 +207,10 @@ void app_main(void)
     }
 
     // Inicializar Wi-Fi usando NVS.
-    ESP_ERROR_CHECK(wifi_manager_init());
+    gtfs_auto_init();
+ESP_ERROR_CHECK(wifi_manager_init());
     ESP_ERROR_CHECK(renfe_client_start());
+gtfs_auto_start();
 
     // Crear consola USB independiente.
     BaseType_t result = xTaskCreate(

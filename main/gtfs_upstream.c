@@ -1,4 +1,5 @@
 #include "gtfs_upstream.h"
+#include "gtfs_auto.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -13,6 +14,7 @@ extern const uint8_t upstream_end[] asm("_binary_pozuelo_upstream_bin_end");
 static bool checked;
 static bool valid;
 static uint32_t total_records;
+static const uint8_t *active_upstream;
 
 static uint16_t u16(const uint8_t *p) {
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
@@ -34,19 +36,22 @@ static uint32_t fnv1a(const uint8_t *data, size_t size) {
 bool gtfs_upstream_is_valid(void) {
     if (checked) return valid;
     checked = true;
-    size_t size = (size_t)(upstream_end - upstream_begin);
-    if (size < HEADER_SIZE || memcmp(upstream_begin, "POZUPV01", 8) != 0) {
+    const uint8_t *current = upstream_begin;
+size_t size = (size_t)(upstream_end - upstream_begin);
+    gtfs_auto_choose_upstream(&current, &size);
+    if (size < HEADER_SIZE || memcmp(current, "POZUPV01", 8) != 0) {
         ESP_LOGE(TAG, "Indice auxiliar ausente o formato desconocido");
         return false;
     }
-    total_records = u32(upstream_begin + 8);
+    total_records = u32(current + 8);
     if ((size - HEADER_SIZE) % RECORD_SIZE != 0 ||
         total_records != (size - HEADER_SIZE) / RECORD_SIZE ||
-        fnv1a(upstream_begin + HEADER_SIZE, size - HEADER_SIZE) !=
-            u32(upstream_begin + 12)) {
+        fnv1a(current + HEADER_SIZE, size - HEADER_SIZE) !=
+            u32(current + 12)) {
         ESP_LOGE(TAG, "Indice auxiliar invalido: tamano o checksum");
         return false;
     }
+    active_upstream = current;
     valid = true;
     ESP_LOGI(TAG, "Indice auxiliar valido: %lu paradas, %u bytes",
              (unsigned long)total_records, (unsigned)size);
@@ -59,7 +64,7 @@ bool gtfs_upstream_lookup(const char *trip_id, uint16_t pozuelo_sequence,
     if (!trip_id || !trip_id[0] || !out || !gtfs_upstream_is_valid())
         return false;
     if (strlen(trip_id) >= 32) return false;
-    const uint8_t *body = upstream_begin + HEADER_SIZE;
+    const uint8_t *body = active_upstream + HEADER_SIZE;
     // Buscar por trip_id mediante búsqueda binaria: el indice esta ordenado.
     uint32_t lo = 0, hi = total_records;
     while (lo < hi) {

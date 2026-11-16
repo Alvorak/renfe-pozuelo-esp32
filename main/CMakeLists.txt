@@ -9,6 +9,7 @@ idf_component_register(
         "renfe_parser.c"
         "gtfs_index.c"
         "gtfs_upstream.c"
+        "gtfs_auto.c"
         "renfe_arrivals.c"
         "renfe_state.c"
     INCLUDE_DIRS "."
@@ -20,6 +21,7 @@ idf_component_register(
         esp_driver_usb_serial_jtag
         esp_http_server
         esp_http_client
+        esp_partition
         mbedtls
         espressif__cjson
     EMBED_FILES "pozuelo_gtfs.bin" "pozuelo_upstream.bin"

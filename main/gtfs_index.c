@@ -1,4 +1,5 @@
 #include "gtfs_index.h"
+#include "gtfs_auto.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -47,7 +48,9 @@ static esp_err_t validate_index(time_t now, const uint8_t **records,
                                 uint32_t *total)
 {
     const uint8_t *data = gtfs_start;
-    const size_t length = (size_t)(gtfs_end - gtfs_start);
+
+    size_t length = (size_t)(gtfs_end - gtfs_start);
+gtfs_auto_choose_primary(&data, &length);
 
     if (length < HEADER_SIZE || memcmp(data, "POZGTFS1", 8) != 0 ||
         read_u32(data + 8) != 1) {
