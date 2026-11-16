@@ -1,255 +1,200 @@
 #!/usr/bin/env python3
-"""Build a compact, ESP32-readable two-index bundle from a Renfe GTFS ZIP.
+"""US-07: enlarge both ESP32 GTFS banks consistently to 3 MiB.
 
-Only stdlib; no SQLite or permanently running Python backend.
+Run from renfe-pozuelo-esp32 repository root:
+    py US07_fix_bancos_3MiB.py --check
+    py US07_fix_bancos_3MiB.py --apply
+
+Changes only partitions.csv, main/gtfs_auto.c, and
+scripts/build_gtfs_bundle.py. A backup is written beside the repository.
 """
 import argparse
 import csv
-from datetime import date, datetime, time, timedelta
-from hashlib import sha256
-import io
-import json
+from datetime import datetime
+from io import StringIO
 from pathlib import Path
 import re
-import struct
-from urllib.request import Request, urlopen
-import zipfile
-import zlib
-from zoneinfo import ZoneInfo
+import shutil
+import sys
 
-DEFAULT_SOURCE = 'https://ssl.renfe.com/ftransit/Fichero_CER_FOMENTO/fomento_transit.zip'
-TZ = ZoneInfo('Europe/Madrid')
-PRIMARY_HDR = struct.Struct('<8sIIqqqI')
-PRIMARY_REC = struct.Struct('<32sqIHH')
-UPSTREAM_HDR = struct.Struct('<8sII')
-UPSTREAM_REC = struct.Struct('<32sH14sii')
-BUNDLE_HDR = struct.Struct('<8sIIIqqq32sI')  # 80 bytes
-assert PRIMARY_HDR.size == 44 and PRIMARY_REC.size == 48
-assert UPSTREAM_HDR.size == 16 and UPSTREAM_REC.size == 56
-assert BUNDLE_HDR.size == 80
+OLD = 0x180000
+NEW = 0x300000
+FLASH_16MB = 0x1000000
+PATHS = ('partitions.csv', 'main/gtfs_auto.c', 'scripts/build_gtfs_bundle.py')
 
-
-def fnv1a(buf):
-    n = 2166136261
-    for b in buf:
-        n = ((n ^ b) * 16777619) & 0xffffffff
-    return n
-
-
-def sec(hhmmss):
-    m = re.fullmatch(r'(\d{1,2}):(\d\d):(\d\d)', hhmmss.strip())
-    if not m or int(m[2]) > 59 or int(m[3]) > 59 or int(m[1]) > 72:
-        raise ValueError(f'Bad GTFS time: {hhmmss!r}')
-    return int(m[1]) * 3600 + int(m[2]) * 60 + int(m[3])
+OLD_MAP = '''        const void *p = NULL;
+        esp_partition_mmap_handle_t handle;
+        if (esp_partition_mmap(slots[i], 0, SLOT_BYTES,
+                               ESP_PARTITION_MMAP_DATA, &p, &handle) != ESP_OK) continue;
+        bundle_info_t info;
+        if (validate_payload((const uint8_t *)p, SLOT_BYTES, &info) &&'''
+NEW_MAP = '''        // Read the small header first: do not reserve a whole 3 MiB MMU mapping.
+        // An uninitialized or interrupted bank fails this check harmlessly.
+        uint8_t header[HDR_SIZE];
+        if (esp_partition_read(slots[i], 0, header, sizeof(header)) != ESP_OK) continue;
+        bundle_info_t declared;
+        if (!inspect_header(header, slots[i]->size, &declared)) continue;
+        const size_t bundle_size = HDR_SIZE + (size_t)declared.primary_len + declared.upstream_len;
+        const void *p = NULL;
+        esp_partition_mmap_handle_t handle;
+        if (esp_partition_mmap(slots[i], 0, bundle_size,
+                               ESP_PARTITION_MMAP_DATA, &p, &handle) != ESP_OK) continue;
+        bundle_info_t info;
+        if (validate_payload((const uint8_t *)p, bundle_size, &info) &&'''
 
 
-def utc_madrid(d, seconds=0):
-    local = datetime.combine(d, time.min).replace(tzinfo=TZ) + timedelta(seconds=seconds)
-    return int(local.timestamp())
+def exactly_once(content, old, new, label):
+    if content.count(old) != 1:
+        raise ValueError(f'{label}: expected exactly one anchor; got {content.count(old)}')
+    return content.replace(old, new, 1)
 
 
-def records(z, name):
-    """Read GTFS CSV, tolerating Renfe's whitespace in headers and values.
-
-    Renfe has published stop_times.txt with the literal header
-    'stop_sequence ' (trailing space), which must be normalised before lookup.
-    Keep all actual stop_sequence *values*: never infer stop order.
-    """
-    matches = [s for s in z.namelist() if s.rsplit('/', 1)[-1] == name]
-    if len(matches) != 1:
-        if name in ('calendar.txt', 'calendar_dates.txt') and not matches:
-            return iter(())
-        raise ValueError(f'Expected one {name}, got {len(matches)}')
-
-    def stream():
-        with z.open(matches[0]) as binary:
-            with io.TextIOWrapper(binary, encoding='utf-8-sig', newline='') as stream:
-                reader = csv.DictReader(stream)
-                original = reader.fieldnames
-                if not original:
-                    raise ValueError(f'{name} has no CSV header')
-                normalized = [header.strip().lstrip('\ufeff').strip()
-                              for header in original]
-                if any(not header for header in normalized) or len(set(normalized)) != len(normalized):
-                    raise ValueError(f'{name} has duplicate/empty column names after normalization: {original!r}')
-                if normalized != original:
-                    changes = [(before, after) for before, after in zip(original, normalized)
-                               if before != after]
-                    print(f'GTFS normalized headers in {name}: {changes!r}')
-                reader.fieldnames = normalized
-                if name == 'stop_times.txt':
-                    required = {'trip_id', 'arrival_time', 'departure_time',
-                                'stop_id', 'stop_sequence'}
-                    missing = required - set(normalized)
-                    if missing:
-                        raise ValueError(f'{name} missing required columns: {sorted(missing)}; headers={original!r}')
-                for line_number, row in enumerate(reader, start=2):
-                    if None in row:  # Too many CSV fields: malformed input.
-                        raise ValueError(f'{name} CSV row {line_number} has excess fields')
-                    yield {key: value.strip() if isinstance(value, str) else value
-                           for key, value in row.items()}
-    return stream()
+def parse_partitions(content):
+    result = []
+    for line in content.splitlines():
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        fields = next(csv.reader(StringIO(line)))
+        if len(fields) < 5:
+            raise ValueError(f'Invalid partitions.csv line: {line!r}')
+        result.append([x.strip() for x in fields[:5]])
+    return result
 
 
-def read_zip(path, start_date, num_days):
-    dates = [start_date + timedelta(days=k) for k in range(num_days)]
-    end_date = dates[-1]
-    with zipfile.ZipFile(path) as z:
-        # GTFS permits calendar.txt on its own, calendar_dates.txt on its own,
-        # or both together. It does not permit both to be missing.
-        present = {name.rsplit('/', 1)[-1] for name in z.namelist()}
-        if not ({'calendar.txt', 'calendar_dates.txt'} & present):
-            raise ValueError('GTFS requires calendar.txt or calendar_dates.txt')
-        print('GTFS calendar files:',
-              'calendar.txt=' + ('yes' if 'calendar.txt' in present else 'no'),
-              'calendar_dates.txt=' + ('yes' if 'calendar_dates.txt' in present else 'no'))
-        # Renfe uses multiple route variants; use short_name, then trip suffix.
-        route_lines = {}
-        for r in records(z, 'routes.txt'):
-            short = (r.get('route_short_name') or '').strip().upper().replace('-', '').replace(' ', '')
-            if short in ('C7', 'C10'):
-                route_lines[r['route_id']] = 7 if short == 'C7' else 10
-        trips = {}
-        for r in records(z, 'trips.txt'):
-            trip = r.get('trip_id', '').strip()
-            service = r.get('service_id', '').strip()
-            if not trip or len(trip.encode('ascii')) >= 32:
-                continue
-            line = route_lines.get(r.get('route_id', ''))
-            if line is None:
-                line = 7 if trip.endswith('C7') else 10 if trip.endswith('C10') else None
-            if line is not None and service:
-                trips[trip] = (service, line)
-        if not trips:
-            raise ValueError('No C7/C10 trips in GTFS')
-        calendar = {}
-        for r in records(z, 'calendar.txt'):
-            sid = r.get('service_id', '')
-            if sid:
-                calendar[sid] = r
-        exceptions = {}
-        for r in records(z, 'calendar_dates.txt'):
-            day_raw = r.get('date', '')
-            if not day_raw:
-                continue
-            try:
-                d = date.fromisoformat(f'{day_raw[:4]}-{day_raw[4:6]}-{day_raw[6:8]}')
-            except ValueError:
-                continue
-            if start_date <= d <= end_date:
-                exceptions[(r['service_id'], d)] = int(r['exception_type'])
-        by_trip = {}
-        for r in records(z, 'stop_times.txt'):
-            trip = r.get('trip_id', '')
-            if trip not in trips:
-                continue
-            stop_id = r.get('stop_id', '').strip()
-            if not stop_id:
-                continue
-            arr = sec(r.get('arrival_time') or r.get('departure_time') or '')
-            dep = sec(r.get('departure_time') or r.get('arrival_time') or '')
-            seq = int(r['stop_sequence'])
-            by_trip.setdefault(trip, []).append((seq, stop_id, arr, dep))
-        primary = []
-        upstream = set()
-        trip_counts = 0
-        active_days = set()
-        weekdays = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
-        for trip, (service, line) in trips.items():
-            stops = sorted(by_trip.get(trip, []))
-            # The direction is established by GTFS stop order, NOT headsign.
-            positions = [i for i, row in enumerate(stops) if row[1] == '10002']
-            valid_targets = []
-            for i in positions:
-                after = stops[i+1:]
-                aravaca_idx = next((j for j, v in enumerate(after) if v[1] == '10001'), -1)
-                if aravaca_idx >= 0 and any(v[1] == '10000' for v in after[aravaca_idx+1:]):
-                    valid_targets.append(i)
-            if len(valid_targets) != 1:
-                continue
-            target_i = valid_targets[0]
-            target_seq, _, target_arr, _ = stops[target_i]
-            trip_bytes = trip.encode('ascii')
-            for seq, stop_id, arr, dep in stops[:target_i+1]:
-                stop_bytes = stop_id.encode('ascii')
-                if len(stop_bytes) >= 14 or not (0 <= seq <= 65535):
-                    raise ValueError('Stop fields cannot fit binary format')
-                upstream.add((trip_bytes, seq, stop_bytes, arr-target_arr, dep-target_arr))
-            for d in dates:
-                override = exceptions.get((service, d))
-                if override == 2:
-                    continue
-                if override != 1:
-                    cal = calendar.get(service)
-                    if cal is None or not (cal['start_date'] <= d.strftime('%Y%m%d') <= cal['end_date']):
-                        continue
-                    if cal[weekdays[d.weekday()]] != '1':
-                        continue
-                arrival_unix = utc_madrid(d, target_arr)
-                primary.append((arrival_unix, trip_bytes, int(d.strftime('%Y%m%d')), target_seq, line))
-                active_days.add(d)
-            trip_counts += 1
-        if len(primary) < 10 or len(active_days) < num_days - 1:
-            raise ValueError(f'Incomplete GTFS coverage: trips={len(primary)} active_days={len(active_days)}/{num_days}')
-        return sorted(set(primary)), sorted(upstream), trip_counts
+def part_size(raw):
+    raw = raw.strip().upper()
+    if raw.endswith('M'):
+        return int(raw[:-1], 0) * 1024 * 1024
+    if raw.endswith('K'):
+        return int(raw[:-1], 0) * 1024
+    return int(raw, 0)
 
 
-def build(path, out, days, start):
-    primary_rows, upstream_rows, count = read_zip(path, start, days)
-    pbody = b''.join(PRIMARY_REC.pack(trip, unix, day, seq, line)
-                     for unix, trip, day, seq, line in primary_rows)
-    ubody = b''.join(UPSTREAM_REC.pack(trip, seq, stop, arr, dep)
-                     for trip, seq, stop, arr, dep in upstream_rows)
-    from_ts = utc_madrid(start)
-    until_ts = utc_madrid(start + timedelta(days=days))
-    generated = int(datetime.now(TZ).timestamp())
-    primary = PRIMARY_HDR.pack(b'POZGTFS1', 1, len(primary_rows), generated,
-                               from_ts, until_ts, fnv1a(pbody)) + pbody
-    upstream = UPSTREAM_HDR.pack(b'POZUPV01', len(upstream_rows), fnv1a(ubody)) + ubody
-    payload = primary + upstream
-    digest = sha256(payload).digest()
-    hdr0 = BUNDLE_HDR.pack(b'POZBND01', 1, len(primary), len(upstream),
-                           generated, from_ts, until_ts, digest, 0)
-    hdr = hdr0[:-4] + struct.pack('<I', zlib.crc32(hdr0[:-4]))
-    packed = hdr + payload
-    if len(packed) > 0x180000:
-        raise ValueError(f'Bundle {len(packed)} exceeds 1.5MiB partition')
-    out.mkdir(parents=True, exist_ok=True)
-    (out / 'latest.bin').write_bytes(packed)
-    info = {'generated_at': generated, 'valid_from': from_ts, 'valid_until': until_ts,
-            'primary_bytes': len(primary), 'upstream_bytes': len(upstream),
-            'primary_trips': len(primary_rows), 'upstream_stops': len(upstream_rows),
-            'unique_direction_trips': count, 'sha256': sha256(packed).hexdigest()}
-    (out / 'latest.json').write_text(json.dumps(info, indent=2) + '\n', encoding='utf-8')
-    return info
+def layout_check(content):
+    parts = parse_partitions(content)
+    seen = set()
+    previous_end = 0x9000
+    layout = []
+    for name, typ, subtype, off, size_raw in parts:
+        if name in seen:
+            raise ValueError(f'Duplicate partition: {name}')
+        seen.add(name)
+        size = part_size(size_raw)
+        align = 0x10000 if typ == 'app' else 0x1000
+        start = int(off, 0) if off else ((previous_end + align - 1) // align) * align
+        end = start + size
+        if start < previous_end or start % align:
+            raise ValueError(f'Overlapping/unaligned partition: {name} at 0x{start:x}')
+        if end > FLASH_16MB:
+            raise ValueError(f'Partitions exceed 16 MiB flash: {name} ends 0x{end:x}')
+        previous_end = end
+        layout.append((name, start, end, size))
+    by_name = {n:(s,e,z) for n,s,e,z in layout}
+    if 'factory' not in by_name or by_name['factory'][:2] != (0x10000, 0x410000):
+        raise ValueError('Factory app offset/size differ from known stable 4 MiB layout; refusing')
+    if 'nvs' not in by_name or by_name['nvs'][0] != 0x9000:
+        raise ValueError('NVS no longer starts at 0x9000; refusing')
+    for name in ('gtfs_a', 'gtfs_b'):
+        if name not in by_name or by_name[name][2] != NEW:
+            raise ValueError(f'{name} is missing or is not 3 MiB')
+    if by_name['gtfs_a'][:2] != (0x410000, 0x710000) or by_name['gtfs_b'][:2] != (0x710000, 0xA10000):
+        raise ValueError('Unexpected GTFS offsets; refusing')
+    return layout
+
+
+def change_partitions(original):
+    updated = original
+    for slot, sub in (('gtfs_a', '0x40'), ('gtfs_b', '0x41')):
+        pattern = rf'(?m)^({slot}\s*,\s*data\s*,\s*{sub}\s*,\s*,\s*)0x180000(\s*,)'
+        updated, matches = re.subn(pattern, r'\g<1>0x300000\g<2>', updated)
+        if matches != 1:
+            raise ValueError(f'{slot}: expected original 1.5 MiB partition with auto offset; got {matches}')
+    layout = layout_check(updated)
+    return updated, layout
+
+
+def change_firmware(original):
+    updated = exactly_once(original, '#define SLOT_BYTES (0x180000U)',
+                           '#define SLOT_BYTES (0x300000U)', 'firmware SLOT_BYTES')
+    updated = exactly_once(updated, OLD_MAP, NEW_MAP, 'firmware startup mmap')
+    return updated
+
+
+def change_builder(original):
+    updated = exactly_once(original, 'if len(packed) > 0x180000:',
+                           'if len(packed) > 0x300000:', 'builder size check')
+    updated = exactly_once(updated, 'exceeds 1.5MiB partition',
+                           'exceeds 3MiB partition', 'builder error message')
+    return updated
+
+
+def prepare(root):
+    files = {name: (root / name).read_text(encoding='utf-8') for name in PATHS}
+    part, layout = change_partitions(files['partitions.csv'])
+    new = {'partitions.csv':part,
+           'main/gtfs_auto.c':change_firmware(files['main/gtfs_auto.c']),
+           'scripts/build_gtfs_bundle.py':change_builder(files['scripts/build_gtfs_bundle.py'])}
+    config = root / 'sdkconfig'
+    if config.is_file():
+        cfg = config.read_text(encoding='utf-8')
+        if not (re.search(r'^CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y$', cfg, re.M) or
+                re.search(r'^CONFIG_ESPTOOLPY_FLASHSIZE="16MB"$', cfg, re.M)):
+            raise ValueError('sdkconfig does not declare 16MB flash; check board/flash before applying')
+    else:
+        print('WARNING: no sdkconfig found; physically verify the ESP32-S3 has 16MB flash')
+    return files, new, layout
 
 
 def main():
-    a = argparse.ArgumentParser()
-    a.add_argument('--zip', type=Path)
-    a.add_argument('--source', default=DEFAULT_SOURCE)
-    a.add_argument('--days', type=int, default=21)
-    a.add_argument('--out', type=Path, default=Path('site/gtfs'))
-    a.add_argument('--start', type=date.fromisoformat, default=datetime.now(TZ).date())
-    args = a.parse_args()
-    if args.days < 7 or args.days > 30:
-        a.error('Days must be 7..30')
-    src = args.zip or Path('/tmp/renfe_cercanias_gtfs.zip')
-    if args.zip is None:
-        req = Request(args.source, headers={'User-Agent': 'PozueloGTFSIndex/1.0'})
-        with urlopen(req, timeout=120) as response, src.open('wb') as f:
-            total = 0
-            while True:
-                data = response.read(131072)
-                if not data:
-                    break
-                f.write(data)
-                total += len(data)
-                if total > 60 * 1024 * 1024:
-                    raise ValueError('Unexpectedly large GTFS archive')
-    result = build(src, args.out, args.days, args.start)
-    print(json.dumps(result, indent=2))
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--check', action='store_true')
+    group.add_argument('--apply', action='store_true')
+    a = parser.parse_args()
+    root = Path.cwd().resolve()
+    if not (root / 'main').is_dir() or not (root / 'scripts').is_dir():
+        print('ERROR: run this from the renfe-pozuelo-esp32 project root', file=sys.stderr)
+        return 1
+    try:
+        # Re-running the installer is a no-op only when ALL three changes
+        # are already present; mixed states are rejected for safety.
+        existing = {name: (root/name).read_text(encoding='utf-8') for name in PATHS}
+        state = [
+            'gtfs_a, data, 0x40, , 0x300000' in existing['partitions.csv']
+                and 'gtfs_b, data, 0x41, , 0x300000' in existing['partitions.csv'],
+            '#define SLOT_BYTES (0x300000U)' in existing['main/gtfs_auto.c']
+                and 'esp_partition_read(slots[i], 0, header, sizeof(header))' in existing['main/gtfs_auto.c'],
+            'if len(packed) > 0x300000:' in existing['scripts/build_gtfs_bundle.py']
+        ]
+        if all(state):
+            layout_check(existing['partitions.csv'])
+            print('US-07 BANCOS 3 MiB: ALREADY INSTALLED - no modifications needed')
+            return 0
+        if any(state):
+            raise ValueError('Partial 3 MiB upgrade detected; review the three files before proceeding')
+        original, updated, layout = prepare(root)
+        print('GTFS bundle from workflow: 2,195,860 bytes')
+        print('New GTFS slot size: 3,145,728 bytes (3 MiB each)')
+        for name, start, end, size in layout:
+            print(f'  {name:10s} 0x{start:07x} - 0x{end:07x} ({size} bytes)')
+        if a.check:
+            print('\nCHECK OK - no files modified')
+            return 0
+        backup = root.parent / (root.name + '_backup_US07_3MiB_' + datetime.now().strftime('%Y%m%d_%H%M%S'))
+        backup.mkdir(exist_ok=False)
+        for name in PATHS:
+            path = backup / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(original[name], encoding='utf-8')
+        for name in PATHS:
+            (root/name).write_text(updated[name], encoding='utf-8')
+        print(f'\nAPPLY OK - backup at {backup}')
+        print('Next: py -m py_compile scripts/build_gtfs_bundle.py, git diff, idf.py build')
+        return 0
+    except (OSError, ValueError, UnicodeError) as exc:
+        print(f'ABORTED without applying changes: {type(exc).__name__}: {exc}', file=sys.stderr)
+        return 2
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
