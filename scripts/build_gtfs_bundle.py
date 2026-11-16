@@ -17,7 +17,7 @@ import zipfile
 import zlib
 from zoneinfo import ZoneInfo
 
-DEFAULT_SOURCE = 'https://ssl.renfe.com/gtransit/Fichero_CER/google_transit.zip'
+DEFAULT_SOURCE = 'https://ssl.renfe.com/ftransit/Fichero_CER_FOMENTO/fomento_transit.zip'
 TZ = ZoneInfo('Europe/Madrid')
 PRIMARY_HDR = struct.Struct('<8sIIqqqI')
 PRIMARY_REC = struct.Struct('<32sqIHH')
