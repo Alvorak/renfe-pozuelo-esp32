@@ -49,15 +49,45 @@ def utc_madrid(d, seconds=0):
 
 
 def records(z, name):
+    """Read GTFS CSV, tolerating Renfe's whitespace in headers and values.
+
+    Renfe has published stop_times.txt with the literal header
+    'stop_sequence ' (trailing space), which must be normalised before lookup.
+    Keep all actual stop_sequence *values*: never infer stop order.
+    """
     matches = [s for s in z.namelist() if s.rsplit('/', 1)[-1] == name]
     if len(matches) != 1:
         if name in ('calendar.txt', 'calendar_dates.txt') and not matches:
             return iter(())
         raise ValueError(f'Expected one {name}, got {len(matches)}')
+
     def stream():
         with z.open(matches[0]) as binary:
             with io.TextIOWrapper(binary, encoding='utf-8-sig', newline='') as stream:
-                yield from csv.DictReader(stream)
+                reader = csv.DictReader(stream)
+                original = reader.fieldnames
+                if not original:
+                    raise ValueError(f'{name} has no CSV header')
+                normalized = [header.strip().lstrip('\ufeff').strip()
+                              for header in original]
+                if any(not header for header in normalized) or len(set(normalized)) != len(normalized):
+                    raise ValueError(f'{name} has duplicate/empty column names after normalization: {original!r}')
+                if normalized != original:
+                    changes = [(before, after) for before, after in zip(original, normalized)
+                               if before != after]
+                    print(f'GTFS normalized headers in {name}: {changes!r}')
+                reader.fieldnames = normalized
+                if name == 'stop_times.txt':
+                    required = {'trip_id', 'arrival_time', 'departure_time',
+                                'stop_id', 'stop_sequence'}
+                    missing = required - set(normalized)
+                    if missing:
+                        raise ValueError(f'{name} missing required columns: {sorted(missing)}; headers={original!r}')
+                for line_number, row in enumerate(reader, start=2):
+                    if None in row:  # Too many CSV fields: malformed input.
+                        raise ValueError(f'{name} CSV row {line_number} has excess fields')
+                    yield {key: value.strip() if isinstance(value, str) else value
+                           for key, value in row.items()}
     return stream()
 
 
