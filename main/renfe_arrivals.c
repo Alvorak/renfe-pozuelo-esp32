@@ -1,4 +1,5 @@
 #include "renfe_arrivals.h"
+#include "renfe_gtfs_rt_codes.h"
 #include "renfe_railway_ids.h"
 #include "renfe_time_limits.h"
 #include "gtfs_index.h"
@@ -43,7 +44,9 @@ static bool cancellation(const cJSON *v)
                strcmp(v->valuestring, "CANCELLED") == 0 ||
                strcmp(v->valuestring, "DELETED") == 0;
     }
-    return cJSON_IsNumber(v) && (v->valueint == 3 || v->valueint == 6 || v->valueint == 7);
+    // Compatibilidad: el codigo numerico DUPLICATED tambien se descarta.
+    // Se conserva la regla previa; la cadena "DUPLICATED" no se trata igual.
+    return cJSON_IsNumber(v) && (v->valueint == RENFE_TRIP_CANCELED || v->valueint == RENFE_TRIP_DUPLICATED || v->valueint == RENFE_TRIP_DELETED);
 }
 
 static bool vehicle_has_passed(const renfe_parse_result_t *vehicles,
@@ -60,7 +63,7 @@ static bool vehicle_has_passed(const renfe_parse_result_t *vehicles,
             strcmp(v->stop_id, RENFE_PRINCIPE_PIO_STOP_ID) == 0) return true;
         // Ya detenido en Pozuelo: no anunciar como proxima llegada.
         if (strcmp(v->stop_id, RENFE_POZUELO_STOP_ID) == 0 &&
-            v->current_status == 1) return true;
+            v->current_status == RENFE_VEHICLE_STOPPED_AT) return true;
         return false;
     }
     return false;
@@ -230,7 +233,7 @@ static bool reported_eta(const cJSON *update, const gtfs_arrival_t *scheduled,
     for (size_t k = 0; k < n; ++k) {
         const cJSON *stop = ordered[k].update;
         const cJSON *rel = field(stop, "scheduleRelationship");
-        if (stop_relationship(rel, "SKIPPED", 1)) {
+        if (stop_relationship(rel, "SKIPPED", RENFE_STOP_SKIPPED)) {
             // La parada objetivo se omite: este tren no debe anunciarse.
             if (ordered[k].sequence == scheduled->stop_sequence) {
                 *blocked = true;
@@ -240,7 +243,7 @@ static bool reported_eta(const cJSON *update, const gtfs_arrival_t *scheduled,
         }
         valid_delay = false;
         *blocked = true;
-        if (stop_relationship(rel, "NO_DATA", 2)) continue;
+        if (stop_relationship(rel, "NO_DATA", RENFE_STOP_NO_DATA)) continue;
 
         const bool target = ordered[k].sequence == scheduled->stop_sequence;
         const cJSON *arrival = field(stop, "arrival");
@@ -285,7 +288,7 @@ static bool vehicle_eta(const renfe_parse_result_t *vehicles,
     for (int i = 0; i < vehicles->candidates_count; ++i) {
         const renfe_vehicle_t *v = &vehicles->candidates[i];
         if (strcmp(v->trip_id, scheduled->trip_id) != 0 ||
-            v->current_status != 1 || !v->stop_id[0]) continue;
+            v->current_status != RENFE_VEHICLE_STOPPED_AT || !v->stop_id[0]) continue;
         int64_t age = (int64_t)now - v->timestamp;
         if (age < -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS || age > RENFE_FEED_MAX_AGE_SECONDS) continue;
         gtfs_upstream_stop_t stop;

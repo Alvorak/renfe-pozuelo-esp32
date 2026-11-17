@@ -1,4 +1,5 @@
 #include "renfe_parser.h"
+#include "renfe_gtfs_rt_codes.h"
 #include "renfe_railway_ids.h"
 
 #include <stdbool.h>
@@ -83,32 +84,32 @@ static int get_status(const cJSON *value)
 
         if (strcmp(status, "INCOMING_AT") == 0)
         {
-            return 0;
+            return RENFE_VEHICLE_INCOMING_AT;
         }
 
         if (strcmp(status, "STOPPED_AT") == 0)
         {
-            return 1;
+            return RENFE_VEHICLE_STOPPED_AT;
         }
 
         if (strcmp(status, "IN_TRANSIT_TO") == 0)
         {
-            return 2;
+            return RENFE_VEHICLE_IN_TRANSIT_TO;
         }
     }
 
-    return -1;
+    return RENFE_VEHICLE_STATUS_UNKNOWN;
 }
 
 static const char *status_name(int status)
 {
     switch (status)
     {
-    case 0:
+    case RENFE_VEHICLE_INCOMING_AT:
         return "INCOMING_AT";
-    case 1:
+    case RENFE_VEHICLE_STOPPED_AT:
         return "STOPPED_AT";
-    case 2:
+    case RENFE_VEHICLE_IN_TRANSIT_TO:
         return "IN_TRANSIT_TO";
     default:
         return "UNKNOWN";

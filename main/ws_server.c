@@ -1,4 +1,5 @@
 #include "ws_server.h"
+#include "renfe_gtfs_rt_codes.h"
 #include "renfe_railway_ids.h"
 #include "renfe_time_limits.h"
 
@@ -144,8 +145,8 @@ static esp_err_t send_schedule(httpd_handle_t hd, int fd, int limit)
             if (arrival->has_position && arrival->current_stop_name[0] &&
                 position_age >= -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS && position_age <= RENFE_FEED_MAX_AGE_SECONDS)
             {
-                const char *prefix = arrival->current_status == 1 ? "En " : arrival->current_status == 0 ? "Llegando a "
-                                                                        : arrival->current_status == 2   ? "Hacia "
+                const char *prefix = arrival->current_status == RENFE_VEHICLE_STOPPED_AT ? "En " : arrival->current_status == RENFE_VEHICLE_INCOMING_AT ? "Llegando a "
+                                                                        : arrival->current_status == RENFE_VEHICLE_IN_TRANSIT_TO   ? "Hacia "
                                                                                                          : "Parada ";
                 snprintf(headsign, sizeof(headsign), "%s%s", prefix,
                          arrival->current_stop_name);

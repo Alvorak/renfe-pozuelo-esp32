@@ -1,4 +1,5 @@
 #include "api_server.h"
+#include "renfe_gtfs_rt_codes.h"
 #include "renfe_railway_ids.h"
 #include "renfe_time_limits.h"
 
@@ -180,9 +181,9 @@ static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
         position_age <= RENFE_FEED_MAX_AGE_SECONDS) {
         cJSON_AddStringToObject(row, "current_stop_id", item->current_stop_id);
         cJSON_AddStringToObject(row, "current_stop_name", item->current_stop_name);
-        const char *status = item->current_status == 1 ? "STOPPED_AT" :
-                             item->current_status == 0 ? "INCOMING_AT" :
-                             item->current_status == 2 ? "IN_TRANSIT_TO" : "UNKNOWN";
+        const char *status = item->current_status == RENFE_VEHICLE_STOPPED_AT ? "STOPPED_AT" :
+                             item->current_status == RENFE_VEHICLE_INCOMING_AT ? "INCOMING_AT" :
+                             item->current_status == RENFE_VEHICLE_IN_TRANSIT_TO ? "IN_TRANSIT_TO" : "UNKNOWN";
         cJSON_AddStringToObject(row, "current_status", status);
         cJSON_AddNumberToObject(row, "position_age_seconds", (double)position_age);
     }

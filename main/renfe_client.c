@@ -1,4 +1,5 @@
 #include "renfe_client.h"
+#include "renfe_gtfs_rt_codes.h"
 #include "renfe_railway_ids.h"
 #include "renfe_time_limits.h"
 #include "renfe_parser.h"
@@ -245,7 +246,7 @@ static esp_err_t download_vehicle_positions(void)
                 }
 
                 // GTFS-RT: 0 = INCOMING_AT.
-                if (train->current_status != 0)
+                if (train->current_status != RENFE_VEHICLE_INCOMING_AT)
                 {
                     continue;
                 }
