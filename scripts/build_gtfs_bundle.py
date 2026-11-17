@@ -212,8 +212,8 @@ def build(path, out, days, start):
                            generated, from_ts, until_ts, digest, 0)
     hdr = hdr0[:-4] + struct.pack('<I', zlib.crc32(hdr0[:-4]))
     packed = hdr + payload
-    if len(packed) > 0x180000:
-        raise ValueError(f'Bundle {len(packed)} exceeds 1.5MiB partition')
+    if len(packed) > 0x300000:
+        raise ValueError(f'Bundle {len(packed)} exceeds 3MiB partition')
     out.mkdir(parents=True, exist_ok=True)
     (out / 'latest.bin').write_bytes(packed)
     info = {'generated_at': generated, 'valid_from': from_ts, 'valid_until': until_ts,
