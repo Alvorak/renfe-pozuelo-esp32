@@ -15,7 +15,7 @@
 #include "freertos/task.h"
 #include "mbedtls/md.h"
 
-#define SLOT_BYTES (0x180000U)
+#define SLOT_BYTES (0x300000U)
 #define HDR_SIZE (80U)
 #define PRIMARY_HEADER 44U
 #define UPSTREAM_HEADER 16U
