@@ -77,3 +77,4 @@ env/
 /secrets/
 *.key
 credentials*.json
+MEJORAS.md

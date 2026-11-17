@@ -17,6 +17,7 @@
 #include "renfe_time_limits.h"
 #include "wifi_manager.h"
 #include "ws_server.h"
+#include "tt_config_api.h"
 
 #define API_PORT 80
 #define ARRIVALS_URI "/api/renfe/pozuelo-principe-pio"
