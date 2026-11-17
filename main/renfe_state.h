@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
 #include "esp_err.h"
 
 #define RENFE_ARRIVAL_MAX 2
@@ -41,7 +42,12 @@ typedef struct {
     renfe_arrival_t arrivals[RENFE_ARRIVAL_MAX];
 } renfe_snapshot_t;
 
+// Inicializar antes de compartir snapshots; llamadas posteriores reutilizan el mutex.
 esp_err_t renfe_state_init(void);
+// Copia el snapshot; si no obtiene el mutex conserva el estado anterior.
 void renfe_state_publish(const renfe_snapshot_t *snapshot);
+// Copia bajo mutex y devuelve out->valid; false tambien si no pudo copiar.
+// El llamador debe inicializar out si necesita un valor definido al fallar.
 bool renfe_state_get(renfe_snapshot_t *out);
+// Borra el snapshot si obtiene el mutex; de lo contrario conserva el anterior.
 void renfe_state_invalidate(void);

@@ -1,18 +1,18 @@
 #include "tt_config_api.h"
-#include "renfe_railway_ids.h"
-#include "renfe_time_limits.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 #include "cJSON.h"
 #include "esp_log.h"
+
+#include "renfe_railway_ids.h"
 #include "renfe_state.h"
+#include "renfe_time_limits.h"
 
 static const char *TAG = "TT_CONFIG";
 

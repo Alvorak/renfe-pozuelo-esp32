@@ -1,10 +1,12 @@
 #include "gtfs_upstream.h"
-#include "gtfs_binary_format.h"
-#include "gtfs_auto.h"
 
 #include <stddef.h>
 #include <string.h>
+
 #include "esp_log.h"
+
+#include "gtfs_auto.h"
+#include "gtfs_binary_format.h"
 
 #define HEADER_SIZE GTFS_UPSTREAM_HEADER_BYTES
 #define RECORD_SIZE GTFS_UPSTREAM_RECORD_BYTES

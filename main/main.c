@@ -1,22 +1,18 @@
 
-#include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-
-#include "esp_err.h"
-#include "esp_log.h"
-#include "nvs_flash.h"
+#include <string.h>
 
 #include "driver/usb_serial_jtag.h"
+#include "esp_err.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "nvs_flash.h"
 
-#include "wifi_manager.h"
 #include "api_server.h"
-
-#include "renfe_client.h"
 #include "gtfs_auto.h"
+#include "renfe_client.h"
+#include "wifi_manager.h"
 
 #define USB_WRITE_TIMEOUT_MS 1000
 #define USB_TX_DONE_TIMEOUT_MS 1000

@@ -1,12 +1,13 @@
 #include "gtfs_index.h"
-#include "gtfs_binary_format.h"
-#include "gtfs_auto.h"
 
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
 #include "esp_log.h"
+
+#include "gtfs_auto.h"
+#include "gtfs_binary_format.h"
 
 #define HEADER_SIZE GTFS_PRIMARY_HEADER_BYTES
 #define RECORD_SIZE GTFS_PRIMARY_RECORD_BYTES
@@ -44,6 +45,7 @@ static uint32_t checksum(const uint8_t *data, size_t length)
     return value;
 }
 
+// Devuelve una vista de solo lectura del cuerpo; no transfiere memoria.
 static esp_err_t validate_index(time_t now, const uint8_t **records, uint32_t *total)
 {
     const uint8_t *data = gtfs_start;

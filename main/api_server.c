@@ -1,7 +1,4 @@
 #include "api_server.h"
-#include "renfe_gtfs_rt_codes.h"
-#include "renfe_railway_ids.h"
-#include "renfe_time_limits.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -14,7 +11,10 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 
+#include "renfe_gtfs_rt_codes.h"
+#include "renfe_railway_ids.h"
 #include "renfe_state.h"
+#include "renfe_time_limits.h"
 #include "wifi_manager.h"
 #include "ws_server.h"
 
@@ -42,6 +42,7 @@ static void iso_utc(int64_t seconds, char output[API_TIMESTAMP_BUFFER_BYTES])
     snprintf(output, API_TIMESTAMP_BUFFER_BYTES, "1970-01-01T00:00:00Z");
 }
 
+// Consume root (tambien al fallar la serializacion) y libera el texto enviado.
 static esp_err_t send_json(httpd_req_t *req, cJSON *root, const char *status)
 {
     if (!root) {

@@ -16,4 +16,5 @@ typedef struct {
 bool gtfs_upstream_lookup(const char *trip_id, uint16_t pozuelo_sequence, const char *stop_id,
                           int sequence, gtfs_upstream_stop_t *out);
 
+// Valida una vez y conserva el resultado y el puntero al indice seleccionado.
 bool gtfs_upstream_is_valid(void);

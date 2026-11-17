@@ -37,7 +37,10 @@ typedef struct {
 } renfe_parse_result_t;
 
 // Inicializa cJSON para utilizar PSRAM.
+// Instala hooks globales: llamar antes de crear objetos cJSON.
 void renfe_parser_init(void);
 
 // Interpreta los vehículos recibidos desde Renfe.
+// json contiene length bytes y sigue perteneciendo al llamador; result es obligatorio.
+// Copia los candidatos al resultado y libera el arbol JSON temporal.
 esp_err_t renfe_parse_vehicles(const char *json, size_t length, renfe_parse_result_t *result);

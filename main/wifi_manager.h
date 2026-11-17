@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+
 #include "esp_err.h"
 
 // Inicializa Wi-Fi y recupera la configuración guardada.

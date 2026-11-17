@@ -1,29 +1,29 @@
 #include "renfe_client.h"
-#include "renfe_gtfs_rt_codes.h"
-#include "renfe_railway_ids.h"
-#include "renfe_time_limits.h"
-#include "renfe_parser.h"
-#include "wifi_manager.h"
-#include "gtfs_index.h"
-#include "renfe_arrivals.h"
-#include "renfe_state.h"
 
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "cJSON.h"
 
+#include "cJSON.h"
+#include "esp_crt_bundle.h"
+#include "esp_err.h"
+#include "esp_heap_caps.h"
+#include "esp_http_client.h"
+#include "esp_log.h"
+#include "esp_netif_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "esp_err.h"
-#include "esp_log.h"
-#include "esp_http_client.h"
-#include "esp_crt_bundle.h"
-#include "esp_heap_caps.h"
-#include "esp_netif_sntp.h"
+#include "gtfs_index.h"
+#include "renfe_arrivals.h"
+#include "renfe_gtfs_rt_codes.h"
+#include "renfe_parser.h"
+#include "renfe_railway_ids.h"
+#include "renfe_state.h"
+#include "renfe_time_limits.h"
+#include "wifi_manager.h"
 
 #define RENFE_URL "https://gtfsrt.renfe.com/vehicle_positions.json"
 

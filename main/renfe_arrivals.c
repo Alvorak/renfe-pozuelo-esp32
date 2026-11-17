@@ -1,16 +1,19 @@
 #include "renfe_arrivals.h"
-#include "renfe_gtfs_rt_codes.h"
-#include "renfe_railway_ids.h"
-#include "renfe_time_limits.h"
-#include "gtfs_index.h"
-#include "gtfs_upstream.h"
-#include "renfe_station_names.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 #include "esp_log.h"
+
+#include "gtfs_index.h"
+#include "gtfs_upstream.h"
+#include "renfe_gtfs_rt_codes.h"
+#include "renfe_railway_ids.h"
+#include "renfe_station_names.h"
+#include "renfe_time_limits.h"
 
 #define GTFS_CANDIDATES 96
 #define PREDICTION_TRIP_ID_BUFFER_BYTES 33

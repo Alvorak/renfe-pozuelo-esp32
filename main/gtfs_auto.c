@@ -1,11 +1,10 @@
 #include "gtfs_auto.h"
-#include "gtfs_binary_format.h"
-#include "wifi_manager.h"
 
 #include <inttypes.h>
+#include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <stdlib.h>
 
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
@@ -15,6 +14,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "mbedtls/md.h"
+
+#include "gtfs_binary_format.h"
+#include "wifi_manager.h"
 
 #define SLOT_BYTES (0x300000U)
 #define HDR_SIZE GTFS_BUNDLE_HEADER_BYTES
@@ -188,6 +190,8 @@ void gtfs_auto_choose_upstream(const uint8_t **data, size_t *size)
     }
 }
 
+// Escribe solo el banco indicado; ESP_ERR_INVALID_STATE senala un bundle
+// validado que requiere reinicio para activarse, no un error de descarga.
 static esp_err_t download_candidate(int target)
 {
     esp_http_client_config_t cfg = {

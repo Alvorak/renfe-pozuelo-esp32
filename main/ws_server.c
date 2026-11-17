@@ -1,7 +1,4 @@
 #include "ws_server.h"
-#include "renfe_gtfs_rt_codes.h"
-#include "renfe_railway_ids.h"
-#include "renfe_time_limits.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -10,15 +7,18 @@
 #include <string.h>
 #include <time.h>
 
-#include "sdkconfig.h"
 #include "cJSON.h"
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "sdkconfig.h"
 
+#include "renfe_gtfs_rt_codes.h"
+#include "renfe_railway_ids.h"
 #include "renfe_state.h"
+#include "renfe_time_limits.h"
 #include "tt_config_api.h"
 
 #ifndef CONFIG_HTTPD_WS_SUPPORT
@@ -316,6 +316,7 @@ static esp_err_t ws_health_handler(httpd_req_t *req)
 }
 
 // Ejecutar SOLO dentro de la tarea del servidor HTTPD mediante queue_work.
+// Trabajo encolado en HTTPD: recorre clientes y envia schedule y heartbeat.
 static void broadcast_work(void *arg)
 {
     httpd_handle_t server = (httpd_handle_t)arg;
