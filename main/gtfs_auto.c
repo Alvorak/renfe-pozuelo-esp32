@@ -1,4 +1,5 @@
 #include "gtfs_auto.h"
+#include "gtfs_binary_format.h"
 #include "wifi_manager.h"
 
 #include <inttypes.h>
@@ -16,11 +17,11 @@
 #include "mbedtls/md.h"
 
 #define SLOT_BYTES (0x300000U)
-#define HDR_SIZE (80U)
-#define PRIMARY_HEADER 44U
-#define UPSTREAM_HEADER 16U
-#define PRIMARY_REC 48U
-#define UPSTREAM_REC 56U
+#define HDR_SIZE GTFS_BUNDLE_HEADER_BYTES
+#define PRIMARY_HEADER GTFS_PRIMARY_HEADER_BYTES
+#define UPSTREAM_HEADER GTFS_UPSTREAM_HEADER_BYTES
+#define PRIMARY_REC GTFS_PRIMARY_RECORD_BYTES
+#define UPSTREAM_REC GTFS_UPSTREAM_RECORD_BYTES
 #define VALID_TIME_MIN 1700000000LL
 #define CHECK_PERIOD_SEC (24 * 3600)
 #define RECHECK_IF_FAILURE_SEC (30 * 60)
@@ -53,7 +54,7 @@ typedef struct {
     int64_t generated;
     int64_t valid_from;
     int64_t valid_until;
-    uint8_t digest[32];
+    uint8_t digest[GTFS_SHA256_BYTES];
 } bundle_info_t;
 
 static uint32_t u32(const uint8_t *p) {
@@ -79,14 +80,14 @@ static uint32_t fnv1a(const uint8_t *data, size_t length) {
     return hash;
 }
 static bool inspect_header(const uint8_t *data, size_t max_size, bundle_info_t *out) {
-    if (max_size < HDR_SIZE || memcmp(data, "POZBND01", 8) != 0 || u32(data + 8) != 1 ||
-        crc32calc(data, 76) != u32(data + 76)) return false;
-    out->primary_len = u32(data + 12);
-    out->upstream_len = u32(data + 16);
-    out->generated = i64(data + 20);
-    out->valid_from = i64(data + 28);
-    out->valid_until = i64(data + 36);
-    memcpy(out->digest, data + 44, 32);
+    if (max_size < HDR_SIZE || memcmp(data, GTFS_BUNDLE_MAGIC, GTFS_MAGIC_BYTES) != 0 || u32(data + GTFS_BUNDLE_VERSION_OFFSET) != GTFS_FORMAT_VERSION ||
+        crc32calc(data, GTFS_BUNDLE_CRC32_OFFSET) != u32(data + GTFS_BUNDLE_CRC32_OFFSET)) return false;
+    out->primary_len = u32(data + GTFS_BUNDLE_PRIMARY_LENGTH_OFFSET);
+    out->upstream_len = u32(data + GTFS_BUNDLE_UPSTREAM_LENGTH_OFFSET);
+    out->generated = i64(data + GTFS_BUNDLE_GENERATED_OFFSET);
+    out->valid_from = i64(data + GTFS_BUNDLE_VALID_FROM_OFFSET);
+    out->valid_until = i64(data + GTFS_BUNDLE_VALID_UNTIL_OFFSET);
+    memcpy(out->digest, data + GTFS_BUNDLE_SHA256_OFFSET, GTFS_SHA256_BYTES);
     size_t total = HDR_SIZE + (size_t)out->primary_len + (size_t)out->upstream_len;
     if (out->primary_len < PRIMARY_HEADER + PRIMARY_REC ||
         out->upstream_len < UPSTREAM_HEADER + UPSTREAM_REC ||
@@ -100,20 +101,20 @@ static bool validate_payload(const uint8_t *bundle, size_t length, bundle_info_t
     if (!inspect_header(bundle, length, info)) return false;
     const uint8_t *primary = bundle + HDR_SIZE;
     const uint8_t *upstream = primary + info->primary_len;
-    if (memcmp(primary, "POZGTFS1", 8) != 0 || u32(primary + 8) != 1 ||
+    if (memcmp(primary, GTFS_PRIMARY_MAGIC, GTFS_MAGIC_BYTES) != 0 || u32(primary + GTFS_PRIMARY_VERSION_OFFSET) != GTFS_FORMAT_VERSION ||
         (info->primary_len - PRIMARY_HEADER) % PRIMARY_REC != 0 ||
-        (info->primary_len - PRIMARY_HEADER) / PRIMARY_REC != u32(primary+12) ||
-        i64(primary + 24) != info->valid_from || i64(primary + 32) != info->valid_until ||
-        fnv1a(primary + PRIMARY_HEADER, info->primary_len - PRIMARY_HEADER) != u32(primary+40)) return false;
-    if (memcmp(upstream, "POZUPV01", 8) != 0 ||
+        (info->primary_len - PRIMARY_HEADER) / PRIMARY_REC != u32(primary+GTFS_PRIMARY_COUNT_OFFSET) ||
+        i64(primary + GTFS_PRIMARY_VALID_FROM_OFFSET) != info->valid_from || i64(primary + GTFS_PRIMARY_VALID_UNTIL_OFFSET) != info->valid_until ||
+        fnv1a(primary + PRIMARY_HEADER, info->primary_len - PRIMARY_HEADER) != u32(primary+GTFS_PRIMARY_CHECKSUM_OFFSET)) return false;
+    if (memcmp(upstream, GTFS_UPSTREAM_MAGIC, GTFS_MAGIC_BYTES) != 0 ||
         (info->upstream_len - UPSTREAM_HEADER) % UPSTREAM_REC != 0 ||
-        (info->upstream_len - UPSTREAM_HEADER) / UPSTREAM_REC != u32(upstream+8) ||
-        fnv1a(upstream + UPSTREAM_HEADER, info->upstream_len - UPSTREAM_HEADER) != u32(upstream+12)) return false;
-    uint8_t hash[32];
+        (info->upstream_len - UPSTREAM_HEADER) / UPSTREAM_REC != u32(upstream+GTFS_UPSTREAM_COUNT_OFFSET) ||
+        fnv1a(upstream + UPSTREAM_HEADER, info->upstream_len - UPSTREAM_HEADER) != u32(upstream+GTFS_UPSTREAM_CHECKSUM_OFFSET)) return false;
+    uint8_t hash[GTFS_SHA256_BYTES];
     const mbedtls_md_info_t *md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
     if (!md || mbedtls_md(md, primary, (size_t)info->primary_len + info->upstream_len, hash) != 0)
         return false;
-    return memcmp(hash, info->digest, 32) == 0;
+    return memcmp(hash, info->digest, GTFS_SHA256_BYTES) == 0;
 }
 
 void gtfs_auto_init(void) {

@@ -1,4 +1,5 @@
 #include "gtfs_index.h"
+#include "gtfs_binary_format.h"
 #include "gtfs_auto.h"
 
 #include <stdbool.h>
@@ -7,8 +8,8 @@
 
 #include "esp_log.h"
 
-#define HEADER_SIZE 44u
-#define RECORD_SIZE 48u
+#define HEADER_SIZE GTFS_PRIMARY_HEADER_BYTES
+#define RECORD_SIZE GTFS_PRIMARY_RECORD_BYTES
 
 static const char *TAG = "GTFS_INDEX";
 
@@ -52,13 +53,13 @@ static esp_err_t validate_index(time_t now, const uint8_t **records,
     size_t length = (size_t)(gtfs_end - gtfs_start);
 gtfs_auto_choose_primary(&data, &length);
 
-    if (length < HEADER_SIZE || memcmp(data, "POZGTFS1", 8) != 0 ||
-        read_u32(data + 8) != 1) {
+    if (length < HEADER_SIZE || memcmp(data, GTFS_PRIMARY_MAGIC, GTFS_MAGIC_BYTES) != 0 ||
+        read_u32(data + GTFS_PRIMARY_VERSION_OFFSET) != GTFS_FORMAT_VERSION) {
         ESP_LOGE(TAG, "Formato de indice invalido");
         return ESP_FAIL;
     }
 
-    const uint32_t count = read_u32(data + 12);
+    const uint32_t count = read_u32(data + GTFS_PRIMARY_COUNT_OFFSET);
     const size_t body_size = length - HEADER_SIZE;
     if ((body_size % RECORD_SIZE) != 0 ||
         count != (body_size / RECORD_SIZE)) {
@@ -67,13 +68,13 @@ gtfs_auto_choose_primary(&data, &length);
     }
 
     const uint8_t *body = data + HEADER_SIZE;
-    if (checksum(body, body_size) != read_u32(data + 40)) {
+    if (checksum(body, body_size) != read_u32(data + GTFS_PRIMARY_CHECKSUM_OFFSET)) {
         ESP_LOGE(TAG, "Checksum incorrecto");
         return ESP_FAIL;
     }
 
-    const int64_t valid_from = read_i64(data + 24);
-    const int64_t valid_until = read_i64(data + 32);
+    const int64_t valid_from = read_i64(data + GTFS_PRIMARY_VALID_FROM_OFFSET);
+    const int64_t valid_until = read_i64(data + GTFS_PRIMARY_VALID_UNTIL_OFFSET);
     if (valid_until <= valid_from || (int64_t)now < valid_from ||
         (int64_t)now >= valid_until) {
         ESP_LOGE(TAG, "Indice GTFS caducado o no vigente");
@@ -87,12 +88,12 @@ gtfs_auto_choose_primary(&data, &length);
 
 static void decode_record(const uint8_t *record, gtfs_arrival_t *item)
 {
-    memcpy(item->trip_id, record, 32);
-    item->trip_id[32] = '\0';
-    item->arrival_unix = read_i64(record + 32);
-    item->service_date = read_u32(record + 40);
-    item->stop_sequence = read_u16(record + 44);
-    item->line = read_u16(record + 46);
+    memcpy(item->trip_id, record, GTFS_TRIP_ID_BYTES);
+    item->trip_id[GTFS_TRIP_ID_BYTES] = '\0';
+    item->arrival_unix = read_i64(record + GTFS_PRIMARY_RECORD_ARRIVAL_OFFSET);
+    item->service_date = read_u32(record + GTFS_PRIMARY_RECORD_SERVICE_DATE_OFFSET);
+    item->stop_sequence = read_u16(record + GTFS_PRIMARY_RECORD_SEQUENCE_OFFSET);
+    item->line = read_u16(record + GTFS_PRIMARY_RECORD_LINE_OFFSET);
 }
 
 esp_err_t gtfs_index_get_window(time_t now, int64_t seconds_before,
@@ -117,7 +118,7 @@ esp_err_t gtfs_index_get_window(time_t now, int64_t seconds_before,
 
     for (uint32_t i = 0; i < total; i++) {
         const uint8_t *record = records + (size_t)i * RECORD_SIZE;
-        const int64_t arrival = read_i64(record + 32);
+        const int64_t arrival = read_i64(record + GTFS_PRIMARY_RECORD_ARRIVAL_OFFSET);
         if (arrival < from) continue;
         if (arrival > until) break; // Indice ordenado por llegada.
         if (*count >= capacity) {
@@ -150,7 +151,7 @@ esp_err_t gtfs_index_get_next(time_t now, gtfs_arrival_t *results,
 
     for (uint32_t i = 0; i < total && *count < capacity; i++) {
         const uint8_t *record = records + (size_t)i * RECORD_SIZE;
-        if (read_i64(record + 32) < (int64_t)now) continue;
+        if (read_i64(record + GTFS_PRIMARY_RECORD_ARRIVAL_OFFSET) < (int64_t)now) continue;
         decode_record(record, &results[*count]);
         (*count)++;
     }
