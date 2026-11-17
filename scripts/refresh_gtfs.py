@@ -72,7 +72,7 @@ def maybe_reuse(source_digest, out=OUT):
         if info.get('source_sha256') != source_digest or remaining < 10 * 86400:
             print('Regenerating: source changed or package expires in <10 days')
             return False
-        old_bundle = fetch(SITE + 'latest.bin', timeout=45, cap=BUNDLE_CAP)
+        old_bundle = fetch(SITE + 'latest.bin', timeout=45, cap=0x300000)
         if sha256(old_bundle).hexdigest() != info['sha256']:
             raise ValueError('Published latest.bin SHA256 mismatch')
         if len(old_bundle) < 80 or old_bundle[:8] != b'POZBND01':
