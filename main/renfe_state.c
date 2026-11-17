@@ -3,6 +3,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#define SNAPSHOT_MUTEX_TIMEOUT_MS 1000
+
 static SemaphoreHandle_t s_mutex;
 static renfe_snapshot_t s_snapshot;
 
@@ -16,7 +18,7 @@ esp_err_t renfe_state_init(void)
 void renfe_state_publish(const renfe_snapshot_t *snapshot)
 {
     if (!snapshot || !s_mutex) return;
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(SNAPSHOT_MUTEX_TIMEOUT_MS)) == pdTRUE) {
         s_snapshot = *snapshot;
         xSemaphoreGive(s_mutex);
     }
@@ -25,7 +27,7 @@ void renfe_state_publish(const renfe_snapshot_t *snapshot)
 bool renfe_state_get(renfe_snapshot_t *out)
 {
     if (!out || !s_mutex) return false;
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) return false;
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(SNAPSHOT_MUTEX_TIMEOUT_MS)) != pdTRUE) return false;
     *out = s_snapshot;
     xSemaphoreGive(s_mutex);
     return out->valid;
@@ -34,7 +36,7 @@ bool renfe_state_get(renfe_snapshot_t *out)
 void renfe_state_invalidate(void)
 {
     if (!s_mutex) return;
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(SNAPSHOT_MUTEX_TIMEOUT_MS)) == pdTRUE) {
         memset(&s_snapshot, 0, sizeof(s_snapshot));
         xSemaphoreGive(s_mutex);
     }

@@ -18,6 +18,11 @@
 #include "renfe_client.h"
 #include "gtfs_auto.h"
 
+#define USB_WRITE_TIMEOUT_MS 1000
+#define USB_TX_DONE_TIMEOUT_MS 1000
+#define USB_READ_TIMEOUT_MS 100
+#define SERVER_SUPERVISION_INTERVAL_MS 500
+
 static const char *TAG = "RENFE";
 
 // Enviar texto directamente al USB.
@@ -30,7 +35,7 @@ static void usb_print(const char *text)
         int n = usb_serial_jtag_write_bytes(
             text + sent,
             len - sent,
-            pdMS_TO_TICKS(1000)
+            pdMS_TO_TICKS(USB_WRITE_TIMEOUT_MS)
         );
 
         if (n <= 0) {
@@ -41,7 +46,7 @@ static void usb_print(const char *text)
     }
 
     usb_serial_jtag_wait_tx_done(
-        pdMS_TO_TICKS(1000)
+        pdMS_TO_TICKS(USB_TX_DONE_TIMEOUT_MS)
     );
 }
 
@@ -62,7 +67,7 @@ static void usb_read_line(
         int n = usb_serial_jtag_read_bytes(
             &ch,
             1,
-            pdMS_TO_TICKS(100)
+            pdMS_TO_TICKS(USB_READ_TIMEOUT_MS)
         );
 
         if (n <= 0) {
@@ -265,6 +270,6 @@ gtfs_auto_start();
             http_started = false;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(SERVER_SUPERVISION_INTERVAL_MS));
     }
 }

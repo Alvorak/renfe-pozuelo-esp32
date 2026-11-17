@@ -31,6 +31,8 @@
 #define WS_SEND_TIMEOUT_SECONDS 2
 #define WS_RECV_TIMEOUT_SECONDS 4
 
+#define WS_SLOW_BROADCAST_THRESHOLD_MS 1500
+
 static const char *TAG = "WS_SERVER";
 static httpd_handle_t s_server;
 static TaskHandle_t s_broadcast_task;
@@ -377,7 +379,7 @@ static void broadcast_work(void *arg)
         }
     }
     const uint32_t took = (uint32_t)(esp_log_timestamp() - started);
-    if (took > 1500)
+    if (took > WS_SLOW_BROADCAST_THRESHOLD_MS)
     {
         ESP_LOGW(TAG, "broadcast_work tardio: %lu ms", (unsigned long)took);
     }

@@ -26,6 +26,12 @@
 #define RECHECK_IF_FAILURE_SEC (30 * 60)
 #define UPDATER_URL "https://alvorak.github.io/renfe-pozuelo-esp32/gtfs/latest.bin"
 
+#define GTFS_HTTP_TIMEOUT_MS 25000
+#define GTFS_POLL_INTERVAL_MS 10000
+#define GTFS_REBOOT_DELAY_MS 15000
+// Espera cooperativa en ticks del scheduler, no en milisegundos.
+#define GTFS_DOWNLOAD_YIELD_TICKS 1
+
 static const char *TAG = "GTFS_AUTO";
 static const esp_partition_t *slots[2];
 static const uint8_t *selected_data;
@@ -158,7 +164,7 @@ static esp_err_t download_candidate(int target) {
     esp_http_client_config_t cfg = {
         .url = UPDATER_URL, .method = HTTP_METHOD_GET,
         .crt_bundle_attach = esp_crt_bundle_attach,
-        .timeout_ms = 25000, .buffer_size = 4096,
+        .timeout_ms = GTFS_HTTP_TIMEOUT_MS, .buffer_size = 4096,
         .disable_auto_redirect = false,
     };
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
@@ -200,7 +206,7 @@ static esp_err_t download_candidate(int target) {
         int n = esp_http_client_read(client, (char*)buffer, want);
         if (n <= 0 || esp_partition_write(slots[target], offset, buffer, n) != ESP_OK) break;
         offset += n;
-        vTaskDelay(1); // Cooperative with realtime/WebSocket tasks.
+        vTaskDelay(GTFS_DOWNLOAD_YIELD_TICKS); // Cooperative with realtime/WebSocket tasks.
     }
     free(buffer);
     if (offset != expected) {
@@ -228,7 +234,7 @@ static void gtfs_update_task(void *arg) {
     (void)arg;
     int64_t last_check = 0;
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        vTaskDelay(pdMS_TO_TICKS(GTFS_POLL_INTERVAL_MS));
         if (!wifi_manager_is_connected()) continue;
         int64_t now = (int64_t)time(NULL);
         if (now < VALID_TIME_MIN || (last_check && now - last_check < CHECK_PERIOD_SEC)) continue;
@@ -240,7 +246,7 @@ static void gtfs_update_task(void *arg) {
         esp_err_t err = download_candidate(inactive);
         if (err == ESP_ERR_INVALID_STATE) {
             ESP_LOGW(TAG, "GTFS activated after controlled reboot in 15 seconds");
-            vTaskDelay(pdMS_TO_TICKS(15000));
+            vTaskDelay(pdMS_TO_TICKS(GTFS_REBOOT_DELAY_MS));
             esp_restart();
         }
         last_check = now - (err == ESP_OK ? 0 : CHECK_PERIOD_SEC - RECHECK_IF_FAILURE_SEC);

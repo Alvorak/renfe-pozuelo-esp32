@@ -29,6 +29,11 @@
 #define RENFE_INTERVAL_MS 60000
 #define RENFE_BUFFER_SIZE (512U * 1024U)
 
+#define VEHICLE_POSITIONS_HTTP_TIMEOUT_MS 15000
+#define TRIP_UPDATES_HTTP_TIMEOUT_MS 20000
+#define WIFI_RECHECK_INTERVAL_MS 1000
+#define SNTP_RECHECK_INTERVAL_MS 2000
+
 static const char *TAG = "RENFE_CLIENT";
 static renfe_parse_result_t s_last_vehicles;
 static bool s_have_vehicles = false;
@@ -119,7 +124,7 @@ static esp_err_t download_vehicle_positions(void)
         .event_handler = http_event_handler,
         .user_data = &state,
         .crt_bundle_attach = esp_crt_bundle_attach,
-        .timeout_ms = 15000,
+        .timeout_ms = VEHICLE_POSITIONS_HTTP_TIMEOUT_MS,
         .buffer_size = 2048,
         .buffer_size_tx = 1024,
         .disable_auto_redirect = true};
@@ -339,7 +344,7 @@ static void probe_trip_updates(void)
         .event_handler = http_event_handler,
         .user_data = &state,
         .crt_bundle_attach = esp_crt_bundle_attach,
-        .timeout_ms = 20000,
+        .timeout_ms = TRIP_UPDATES_HTTP_TIMEOUT_MS,
         .buffer_size = 2048,
         .buffer_size_tx = 1024,
         .disable_auto_redirect = true
@@ -410,7 +415,7 @@ static void renfe_task(void *arg)
     {
         if (!wifi_manager_is_connected())
         {
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskDelay(pdMS_TO_TICKS(WIFI_RECHECK_INTERVAL_MS));
             continue;
         }
 
@@ -422,7 +427,7 @@ static void renfe_task(void *arg)
                 TAG,
                 "Esperando sincronizacion horaria");
 
-            vTaskDelay(pdMS_TO_TICKS(2000));
+            vTaskDelay(pdMS_TO_TICKS(SNTP_RECHECK_INTERVAL_MS));
             continue;
         }
 
