@@ -1,4 +1,5 @@
 #include "renfe_arrivals.h"
+#include "renfe_time_limits.h"
 #include "gtfs_index.h"
 #include "gtfs_upstream.h"
 #include "renfe_station_names.h"
@@ -10,7 +11,6 @@
 #include "esp_log.h"
 
 #define GTFS_CANDIDATES 96
-#define MAX_FEED_AGE_SECONDS 180
 static const char *TAG = "RENFE_ARRIVALS";
 
 static const cJSON *field(const cJSON *obj, const char *key)
@@ -50,7 +50,7 @@ static bool vehicle_has_passed(const renfe_parse_result_t *vehicles,
         const renfe_vehicle_t *v = &vehicles->candidates[i];
         if (strcmp(v->trip_id, trip_id) != 0) continue;
         int64_t age = (int64_t)now - v->timestamp;
-        if (age < -30 || age > MAX_FEED_AGE_SECONDS) return false;
+        if (age < -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS || age > RENFE_FEED_MAX_AGE_SECONDS) return false;
         // 10001: Aravaca; 10000: Principe Pio.
         if (strcmp(v->stop_id, "10001") == 0 ||
             strcmp(v->stop_id, "10000") == 0) return true;
@@ -101,7 +101,7 @@ static void attach_position(renfe_arrival_t *item,
         if (strcmp(vehicle->trip_id, item->trip_id) != 0 ||
             vehicle->stop_id[0] == '\0') continue;
         const int64_t age = (int64_t)now - vehicle->timestamp;
-        if (vehicle->timestamp <= 0 || age < -30 || age > MAX_FEED_AGE_SECONDS)
+        if (vehicle->timestamp <= 0 || age < -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS || age > RENFE_FEED_MAX_AGE_SECONDS)
             continue;
         if (!best || vehicle->timestamp > best->timestamp) best = vehicle;
     }
@@ -123,7 +123,6 @@ static void attach_position(renfe_arrival_t *item,
 
 // US08A: Propagacion por secuencia real de paradas, no por cercania GPS.
 #define UPDATES_PER_TRIP_MAX 96
-#define CONTINUITY_SECONDS 180
 #define PREDICTION_CACHE_SIZE 64
 
 typedef struct {
@@ -268,7 +267,7 @@ static bool reported_eta(const cJSON *update, const gtfs_arrival_t *scheduled,
             method = target ? RENFE_ETA_STOP_TIME : RENFE_ETA_PROPAGATED;
         }
     }
-    if (!valid_delay || delay < -3600 || delay > 7200) return false;
+    if (!valid_delay || delay < RENFE_REPORTED_DELAY_MIN_SECONDS || delay > RENFE_REPORTED_DELAY_MAX_SECONDS) return false;
     *eta = scheduled->arrival_unix + delay;
     *source = method;
     return true;
@@ -284,7 +283,7 @@ static bool vehicle_eta(const renfe_parse_result_t *vehicles,
         if (strcmp(v->trip_id, scheduled->trip_id) != 0 ||
             v->current_status != 1 || !v->stop_id[0]) continue;
         int64_t age = (int64_t)now - v->timestamp;
-        if (age < -30 || age > MAX_FEED_AGE_SECONDS) continue;
+        if (age < -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS || age > RENFE_FEED_MAX_AGE_SECONDS) continue;
         gtfs_upstream_stop_t stop;
         if (!gtfs_upstream_lookup(scheduled->trip_id, scheduled->stop_sequence,
                                   v->stop_id, v->current_stop_sequence, &stop) ||
@@ -334,7 +333,7 @@ esp_err_t renfe_arrivals_calculate(time_t now,
     int64_t header_time = (int64_t)now;
     int64_field(field(field(root, "header"), "timestamp"), &header_time);
     int64_t feed_age = (int64_t)now - header_time;
-    if (feed_age < -30 || feed_age > MAX_FEED_AGE_SECONDS) {
+    if (feed_age < -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS || feed_age > RENFE_FEED_MAX_AGE_SECONDS) {
         ESP_LOGW(TAG, "Feed trip_updates antiguo: edad=%lld s", (long long)feed_age);
         return ESP_ERR_INVALID_STATE;
     }
@@ -378,8 +377,8 @@ esp_err_t renfe_arrivals_calculate(time_t now,
             }
             int64_t update_time = header_time;
             int64_field(field(update, "timestamp"), &update_time);
-            if ((int64_t)now - update_time < -30 ||
-                (int64_t)now - update_time > MAX_FEED_AGE_SECONDS) continue;
+            if ((int64_t)now - update_time < -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS ||
+                (int64_t)now - update_time > RENFE_FEED_MAX_AGE_SECONDS) continue;
             observed = update_time;
             have_eta = reported_eta(update, scheduled, &eta, &source, &blocked);
             break;
@@ -397,13 +396,13 @@ esp_err_t renfe_arrivals_calculate(time_t now,
             }
         }
         prediction_cache_t *cached = cache_find(scheduled);
-        if (have_eta && (eta < (int64_t)now - 30 ||
-                         eta > (int64_t)now + 3 * 3600)) have_eta = false;
+        if (have_eta && (eta < (int64_t)now - RENFE_ARRIVAL_PAST_GRACE_SECONDS ||
+                         eta > (int64_t)now + RENFE_ARRIVAL_FUTURE_HORIZON_SECONDS)) have_eta = false;
         if (have_eta && (!cached || observed >= cached->observed_unix)) {
             cache_store(scheduled, eta, observed, source);
         } else if (cached) {
             int64_t cache_age = (int64_t)now - cached->observed_unix;
-            if (cache_age >= 0 && cache_age <= CONTINUITY_SECONDS &&
+            if (cache_age >= 0 && cache_age <= RENFE_PREDICTION_CONTINUITY_SECONDS &&
                 cached->predicted_unix > now) {
                 eta = cached->predicted_unix;
                 source = RENFE_ETA_CACHED;
@@ -412,8 +411,8 @@ esp_err_t renfe_arrivals_calculate(time_t now,
                 have_eta = false;
             }
         }
-        if (!have_eta || eta < (int64_t)now - 30 ||
-            eta > (int64_t)now + 3 * 3600) continue;
+        if (!have_eta || eta < (int64_t)now - RENFE_ARRIVAL_PAST_GRACE_SECONDS ||
+            eta > (int64_t)now + RENFE_ARRIVAL_FUTURE_HORIZON_SECONDS) continue;
         renfe_arrival_t item = {0};
         snprintf(item.trip_id, sizeof(item.trip_id), "%s", scheduled->trip_id);
         item.line = scheduled->line;

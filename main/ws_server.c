@@ -1,4 +1,5 @@
 #include "ws_server.h"
+#include "renfe_time_limits.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -27,7 +28,6 @@
 #define WS_MAX_SOCKETS 9      // Hasta 6 clientes; HTTPD reserva 3 sockets.
 #define WS_MAX_MESSAGE 16384
 #define WS_UPDATE_MS 20000
-#define WS_MAX_SNAPSHOT_AGE 180
 #define WS_SEND_TIMEOUT_SECONDS 2
 #define WS_RECV_TIMEOUT_SECONDS 4
 
@@ -84,7 +84,7 @@ static esp_err_t send_schedule(httpd_handle_t hd, int fd, int limit)
     renfe_snapshot_t snapshot = {0};
     bool available = renfe_state_get(&snapshot);
     const int64_t age = available ? now - snapshot.calculated_unix : -1;
-    const bool fresh = available && age >= -30 && age <= WS_MAX_SNAPSHOT_AGE;
+    const bool fresh = available && age >= -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS && age <= RENFE_SNAPSHOT_MAX_AGE_SECONDS;
 
     cJSON *root = cJSON_CreateObject();
     if (!root)
@@ -106,7 +106,7 @@ static esp_err_t send_schedule(httpd_handle_t hd, int fd, int limit)
             const renfe_arrival_t *arrival = &snapshot.arrivals[i];
             if (added >= (size_t)limit)
                 break;
-            if (arrival->estimated_unix < now - 30)
+            if (arrival->estimated_unix < now - RENFE_ARRIVAL_PAST_GRACE_SECONDS)
                 continue;
 
             cJSON *trip = cJSON_CreateObject();
@@ -130,7 +130,7 @@ static esp_err_t send_schedule(httpd_handle_t hd, int fd, int limit)
             char headsign[96] = "Sin posicion";
             const int64_t position_age = now - arrival->position_timestamp;
             if (arrival->has_position && arrival->current_stop_name[0] &&
-                position_age >= -30 && position_age <= WS_MAX_SNAPSHOT_AGE)
+                position_age >= -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS && position_age <= RENFE_FEED_MAX_AGE_SECONDS)
             {
                 const char *prefix = arrival->current_status == 1 ? "En " : arrival->current_status == 0 ? "Llegando a "
                                                                         : arrival->current_status == 2   ? "Hacia "

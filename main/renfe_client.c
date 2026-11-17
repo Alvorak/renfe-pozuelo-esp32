@@ -1,4 +1,5 @@
 #include "renfe_client.h"
+#include "renfe_time_limits.h"
 #include "renfe_parser.h"
 #include "wifi_manager.h"
 #include "gtfs_index.h"
@@ -215,7 +216,7 @@ static esp_err_t download_vehicle_positions(void)
                     (int64_t)now - train->timestamp;
 
                 if (train->timestamp <= 0 ||
-                    age < -30 || age > 180)
+                    age < -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS || age > RENFE_FEED_MAX_AGE_SECONDS)
                 {
                     ESP_LOGW(
                         TAG,

@@ -1,4 +1,5 @@
 #include "api_server.h"
+#include "renfe_time_limits.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -16,7 +17,6 @@
 #include "ws_server.h"
 
 #define API_PORT 80
-#define SNAPSHOT_MAX_AGE_SECONDS 180
 #define ARRIVALS_URI "/api/renfe/pozuelo-principe-pio"
 
 static const char *TAG = "API_SERVER";
@@ -168,8 +168,8 @@ static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
     cJSON_AddStringToObject(row, "eta_method", method);
     // Informacion opcional: si no hay posicion reciente, no inventarla.
     int64_t position_age = now - item->position_timestamp;
-    if (item->has_position && position_age >= -30 &&
-        position_age <= SNAPSHOT_MAX_AGE_SECONDS) {
+    if (item->has_position && position_age >= -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS &&
+        position_age <= RENFE_FEED_MAX_AGE_SECONDS) {
         cJSON_AddStringToObject(row, "current_stop_id", item->current_stop_id);
         cJSON_AddStringToObject(row, "current_stop_name", item->current_stop_name);
         const char *status = item->current_status == 1 ? "STOPPED_AT" :
@@ -199,7 +199,7 @@ static esp_err_t arrivals_get_handler(httpd_req_t *req)
     renfe_snapshot_t snapshot = {0};
     bool available = renfe_state_get(&snapshot);
     int64_t age = available ? now - snapshot.calculated_unix : -1;
-    bool fresh = available && age >= -30 && age <= SNAPSHOT_MAX_AGE_SECONDS;
+    bool fresh = available && age >= -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS && age <= RENFE_SNAPSHOT_MAX_AGE_SECONDS;
 
     cJSON *root = cJSON_CreateObject();
     if (!root) {
@@ -233,7 +233,7 @@ static esp_err_t arrivals_get_handler(httpd_req_t *req)
         if (n > (size_t)limit) n = (size_t)limit;
         for (size_t i = 0; i < n; i++) {
             // Nunca mostrar estimaciones ya vencidas como proximas llegadas.
-            if (snapshot.arrivals[i].estimated_unix < now - 30) continue;
+            if (snapshot.arrivals[i].estimated_unix < now - RENFE_ARRIVAL_PAST_GRACE_SECONDS) continue;
             if (departures) add_arrival(departures, &snapshot.arrivals[i], now);
         }
     } else {

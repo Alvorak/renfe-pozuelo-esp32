@@ -1,4 +1,5 @@
 #include "tt_config_api.h"
+#include "renfe_time_limits.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -15,7 +16,6 @@
 #define STOP_ID "renfe:10002"
 #define STOP_LAT (40.44761)
 #define STOP_LON (-3.80020)
-#define SNAPSHOT_MAX_AGE_SECONDS 180
 
 static const char *TAG = "TT_CONFIG";
 
@@ -108,7 +108,7 @@ static esp_err_t schedule_handler(httpd_req_t *req)
     int64_t now = (int64_t)time(NULL);
     bool exists = renfe_state_get(&snapshot);
     int64_t age = exists ? now - snapshot.calculated_unix : -1;
-    bool fresh = exists && age >= -30 && age <= SNAPSHOT_MAX_AGE_SECONDS;
+    bool fresh = exists && age >= -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS && age <= RENFE_SNAPSHOT_MAX_AGE_SECONDS;
 
     cJSON *root = cJSON_CreateObject();
     if (!root) return ESP_ERR_NO_MEM;
@@ -120,7 +120,7 @@ static esp_err_t schedule_handler(httpd_req_t *req)
     if (fresh) {
         for (size_t i = 0; i < snapshot.count && i < RENFE_ARRIVAL_MAX; ++i) {
             const renfe_arrival_t *a = &snapshot.arrivals[i];
-            if (a->estimated_unix < now - 30) continue;
+            if (a->estimated_unix < now - RENFE_ARRIVAL_PAST_GRACE_SECONDS) continue;
             cJSON *trip = cJSON_CreateObject();
             if (!trip) break;
             cJSON_AddStringToObject(trip, "tripId", a->trip_id);
