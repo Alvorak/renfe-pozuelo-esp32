@@ -11,6 +11,7 @@
 
 #include "api_server.h"
 #include "gtfs_auto.h"
+#include "oled_status.h"
 #include "renfe_client.h"
 #include "wifi_manager.h"
 
@@ -180,6 +181,11 @@ void app_main(void)
     ESP_ERROR_CHECK(wifi_manager_init());
     ESP_ERROR_CHECK(renfe_client_start());
     gtfs_auto_start();
+    // La pantalla es opcional: un error I2C nunca impide iniciar el servidor.
+    esp_err_t oled_err = oled_status_start();
+    if (oled_err != ESP_OK) {
+        ESP_LOGW(TAG, "OLED no disponible: %s", esp_err_to_name(oled_err));
+    }
 
     // Crear consola USB independiente.
     BaseType_t result =

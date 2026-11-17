@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "main.c"
+        "oled_status.c"
         "wifi_manager.c"
         "api_server.c"
         "ws_server.c"
@@ -19,6 +20,7 @@ idf_component_register(
         esp_netif
         nvs_flash
         esp_driver_usb_serial_jtag
+        esp_driver_i2c
         esp_http_server
         esp_http_client
         esp_partition
