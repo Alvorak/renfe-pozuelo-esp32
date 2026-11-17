@@ -67,8 +67,7 @@ static esp_err_t send_json(httpd_req_t *req, cJSON *root, const char *status)
     return err;
 }
 
-static esp_err_t send_simple_error(httpd_req_t *req,
-                                   const char *status, const char *message)
+static esp_err_t send_simple_error(httpd_req_t *req, const char *status, const char *message)
 {
     cJSON *obj = cJSON_CreateObject();
     if (obj) {
@@ -95,8 +94,10 @@ static bool read_limit(httpd_req_t *req, int *limit)
 {
     *limit = 2;
     size_t len = httpd_req_get_url_query_len(req);
-    if (!len) return true;
-    if (len >= API_QUERY_BUFFER_BYTES) return false;
+    if (!len)
+        return true;
+    if (len >= API_QUERY_BUFFER_BYTES)
+        return false;
 
     char query[API_QUERY_BUFFER_BYTES];
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
@@ -105,16 +106,20 @@ static bool read_limit(httpd_req_t *req, int *limit)
 
     char value[API_LIMIT_BUFFER_BYTES];
     esp_err_t err = httpd_query_key_value(query, "limit", value, sizeof(value));
-    if (err == ESP_ERR_NOT_FOUND) return true;
-    if (err != ESP_OK || value[0] == '\0') return false;
+    if (err == ESP_ERR_NOT_FOUND)
+        return true;
+    if (err != ESP_OK || value[0] == '\0')
+        return false;
 
     // Evitar que '2abc', negativos o espacios sean interpretados como enteros.
     for (size_t i = 0; value[i]; i++) {
-        if (value[i] < '0' || value[i] > '9') return false;
+        if (value[i] < '0' || value[i] > '9')
+            return false;
     }
 
     long parsed = strtol(value, NULL, 10);
-    if (parsed < 1 || parsed > 30) return false;
+    if (parsed < 1 || parsed > 30)
+        return false;
     *limit = (parsed < 2) ? (int)parsed : 2;
     return true;
 }
@@ -122,7 +127,8 @@ static bool read_limit(httpd_req_t *req, int *limit)
 static void add_origin(cJSON *root)
 {
     cJSON *origin = cJSON_CreateObject();
-    if (!origin) return;
+    if (!origin)
+        return;
     cJSON_AddStringToObject(origin, "stop_id", RENFE_POZUELO_STOP_ID);
     cJSON_AddStringToObject(origin, "stop_code", RENFE_POZUELO_STOP_ID);
     cJSON_AddStringToObject(origin, "stop_name", RENFE_POZUELO_NAME);
@@ -131,29 +137,30 @@ static void add_origin(cJSON *root)
     cJSON_AddItemToObject(root, "origin", origin);
 }
 
-static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
-                        int64_t now)
+static void add_arrival(cJSON *departures, const renfe_arrival_t *item, int64_t now)
 {
     cJSON *row = cJSON_CreateObject();
-    if (!row) return;
+    if (!row)
+        return;
 
     const char *line = item->line == RENFE_LINE_C7 ? RENFE_LINE_C7_NAME : RENFE_LINE_C10_NAME;
     const char *route_id = item->line == RENFE_LINE_C7 ? RENFE_ROUTE_C7 : RENFE_ROUTE_C10;
-    const char *method = item->source == RENFE_ETA_STOP_TIME ? "stop_time_update" :
-        item->source == RENFE_ETA_PROPAGATED ? "propagated_delay" :
-        item->source == RENFE_ETA_VEHICLE ? "vehicle_and_schedule" :
-        item->source == RENFE_ETA_CACHED ? "last_prediction" : "reported_delay";
+    const char *method = item->source == RENFE_ETA_STOP_TIME    ? "stop_time_update"
+                         : item->source == RENFE_ETA_PROPAGATED ? "propagated_delay"
+                         : item->source == RENFE_ETA_VEHICLE    ? "vehicle_and_schedule"
+                         : item->source == RENFE_ETA_CACHED     ? "last_prediction"
+                                                                : "reported_delay";
 
     char arrival_iso[API_TIMESTAMP_BUFFER_BYTES];
     char scheduled_iso[API_TIMESTAMP_BUFFER_BYTES];
     char service_date[API_SERVICE_DATE_BUFFER_BYTES];
     iso_utc(item->estimated_unix, arrival_iso);
     iso_utc(item->scheduled_unix, scheduled_iso);
-    snprintf(service_date, sizeof(service_date), "%08lu",
-             (unsigned long)item->service_date);
+    snprintf(service_date, sizeof(service_date), "%08lu", (unsigned long)item->service_date);
 
     int64_t seconds = item->estimated_unix - now;
-    if (seconds < 0) seconds = 0;
+    if (seconds < 0)
+        seconds = 0;
     // Igual que el Python, mostrar minutos redondeados, no truncados.
     int64_t minutes = (seconds + 30) / 60;
 
@@ -170,10 +177,10 @@ static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
     cJSON_AddNumberToObject(row, "eta_minutes", (double)minutes);
     cJSON_AddNumberToObject(row, "delay_seconds", item->delay_seconds);
     cJSON_AddStringToObject(row, "source",
-        item->source == RENFE_ETA_VEHICLE ? "renfe_estimated" :
-        item->source == RENFE_ETA_CACHED ? "renfe_cached" : "renfe_realtime");
-    cJSON_AddStringToObject(row, "route_color",
-        item->line == RENFE_LINE_C7 ? "E53935" : "C4D600");
+                            item->source == RENFE_ETA_VEHICLE  ? "renfe_estimated"
+                            : item->source == RENFE_ETA_CACHED ? "renfe_cached"
+                                                               : "renfe_realtime");
+    cJSON_AddStringToObject(row, "route_color", item->line == RENFE_LINE_C7 ? "E53935" : "C4D600");
     cJSON_AddStringToObject(row, "eta_method", method);
     // Informacion opcional: si no hay posicion reciente, no inventarla.
     int64_t position_age = now - item->position_timestamp;
@@ -181,9 +188,10 @@ static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
         position_age <= RENFE_FEED_MAX_AGE_SECONDS) {
         cJSON_AddStringToObject(row, "current_stop_id", item->current_stop_id);
         cJSON_AddStringToObject(row, "current_stop_name", item->current_stop_name);
-        const char *status = item->current_status == RENFE_VEHICLE_STOPPED_AT ? "STOPPED_AT" :
-                             item->current_status == RENFE_VEHICLE_INCOMING_AT ? "INCOMING_AT" :
-                             item->current_status == RENFE_VEHICLE_IN_TRANSIT_TO ? "IN_TRANSIT_TO" : "UNKNOWN";
+        const char *status = item->current_status == RENFE_VEHICLE_STOPPED_AT      ? "STOPPED_AT"
+                             : item->current_status == RENFE_VEHICLE_INCOMING_AT   ? "INCOMING_AT"
+                             : item->current_status == RENFE_VEHICLE_IN_TRANSIT_TO ? "IN_TRANSIT_TO"
+                                                                                   : "UNKNOWN";
         cJSON_AddStringToObject(row, "current_status", status);
         cJSON_AddNumberToObject(row, "position_age_seconds", (double)position_age);
     }
@@ -196,8 +204,7 @@ static esp_err_t arrivals_get_handler(httpd_req_t *req)
 {
     int limit;
     if (!read_limit(req, &limit)) {
-        return send_simple_error(req, "400 Bad Request",
-                                 "limit debe ser un entero entre 1 y 30");
+        return send_simple_error(req, "400 Bad Request", "limit debe ser un entero entre 1 y 30");
     }
 
     time_t current = time(NULL);
@@ -208,7 +215,8 @@ static esp_err_t arrivals_get_handler(httpd_req_t *req)
     renfe_snapshot_t snapshot = {0};
     bool available = renfe_state_get(&snapshot);
     int64_t age = available ? now - snapshot.calculated_unix : -1;
-    bool fresh = available && age >= -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS && age <= RENFE_SNAPSHOT_MAX_AGE_SECONDS;
+    bool fresh = available && age >= -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS &&
+                 age <= RENFE_SNAPSHOT_MAX_AGE_SECONDS;
 
     cJSON *root = cJSON_CreateObject();
     if (!root) {
@@ -223,8 +231,7 @@ static esp_err_t arrivals_get_handler(httpd_req_t *req)
         cJSON_AddItemToArray(lines, cJSON_CreateString(RENFE_LINE_C10_NAME));
     }
     cJSON_AddStringToObject(root, "source",
-                             fresh && snapshot.count > 0
-                                 ? "renfe_realtime" : "renfe_unavailable");
+                            fresh && snapshot.count > 0 ? "renfe_realtime" : "renfe_unavailable");
     cJSON_AddStringToObject(root, "generated_at", timestamp);
     cJSON_AddStringToObject(root, "timezone", "UTC");
     cJSON_AddBoolToObject(root, "fallback_used", !fresh);
@@ -238,17 +245,21 @@ static esp_err_t arrivals_get_handler(httpd_req_t *req)
         cJSON_AddNumberToObject(root, "snapshot_age_seconds", (double)age);
 
         size_t n = snapshot.count;
-        if (n > RENFE_ARRIVAL_MAX) n = RENFE_ARRIVAL_MAX;
-        if (n > (size_t)limit) n = (size_t)limit;
+        if (n > RENFE_ARRIVAL_MAX)
+            n = RENFE_ARRIVAL_MAX;
+        if (n > (size_t)limit)
+            n = (size_t)limit;
         for (size_t i = 0; i < n; i++) {
             // Nunca mostrar estimaciones ya vencidas como proximas llegadas.
-            if (snapshot.arrivals[i].estimated_unix < now - RENFE_ARRIVAL_PAST_GRACE_SECONDS) continue;
-            if (departures) add_arrival(departures, &snapshot.arrivals[i], now);
+            if (snapshot.arrivals[i].estimated_unix < now - RENFE_ARRIVAL_PAST_GRACE_SECONDS)
+                continue;
+            if (departures)
+                add_arrival(departures, &snapshot.arrivals[i], now);
         }
     } else {
         if (errors) {
-            cJSON_AddItemToArray(errors, cJSON_CreateString(
-                "RENFE: estimaciones aun no disponibles o caducadas"));
+            cJSON_AddItemToArray(
+                errors, cJSON_CreateString("RENFE: estimaciones aun no disponibles o caducadas"));
         }
     }
 
@@ -263,8 +274,7 @@ esp_err_t api_server_start(void)
         if (!ws_server_is_running()) {
             esp_err_t ws_err = ws_server_start();
             if (ws_err != ESP_OK) {
-                ESP_LOGE(TAG, "REST activo, pero WS no arranco: %s",
-                         esp_err_to_name(ws_err));
+                ESP_LOGE(TAG, "REST activo, pero WS no arranco: %s", esp_err_to_name(ws_err));
             }
         }
         return ESP_OK;
@@ -285,20 +295,13 @@ esp_err_t api_server_start(void)
     }
 
     const httpd_uri_t health = {
-        .uri = "/health",
-        .method = HTTP_GET,
-        .handler = health_get_handler,
-        .user_ctx = NULL
-    };
+        .uri = "/health", .method = HTTP_GET, .handler = health_get_handler, .user_ctx = NULL};
     const httpd_uri_t arrivals = {
-        .uri = ARRIVALS_URI,
-        .method = HTTP_GET,
-        .handler = arrivals_get_handler,
-        .user_ctx = NULL
-    };
+        .uri = ARRIVALS_URI, .method = HTTP_GET, .handler = arrivals_get_handler, .user_ctx = NULL};
 
     err = httpd_register_uri_handler(server, &health);
-    if (err == ESP_OK) err = httpd_register_uri_handler(server, &arrivals);
+    if (err == ESP_OK)
+        err = httpd_register_uri_handler(server, &arrivals);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "No se pudieron registrar rutas HTTP: %s", esp_err_to_name(err));
         httpd_stop(server);
@@ -314,8 +317,7 @@ esp_err_t api_server_start(void)
     // Puerto 8000: WebSocket + API HTTP del configurador.
     esp_err_t ws_err = ws_server_start();
     if (ws_err != ESP_OK) {
-        ESP_LOGE(TAG, "REST activo, pero WS no arranco: %s",
-                 esp_err_to_name(ws_err));
+        ESP_LOGE(TAG, "REST activo, pero WS no arranco: %s", esp_err_to_name(ws_err));
         // REST sigue disponible aunque el servidor WS falle al iniciar.
     }
     return ESP_OK;
@@ -327,10 +329,12 @@ esp_err_t api_server_stop(void)
     if (ws_err != ESP_OK) {
         ESP_LOGW(TAG, "Error deteniendo servidor WS: %s", esp_err_to_name(ws_err));
     }
-    if (!s_server) return ws_err;
+    if (!s_server)
+        return ws_err;
     ESP_LOGI(TAG, "Deteniendo servidor HTTP...");
     esp_err_t err = httpd_stop(s_server);
-    if (err == ESP_OK) s_server = NULL;
+    if (err == ESP_OK)
+        s_server = NULL;
     return err;
 }
 

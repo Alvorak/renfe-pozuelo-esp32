@@ -39,11 +39,8 @@ static void usb_print(const char *text)
     size_t sent = 0;
 
     while (sent < len) {
-        int n = usb_serial_jtag_write_bytes(
-            text + sent,
-            len - sent,
-            pdMS_TO_TICKS(USB_WRITE_TIMEOUT_MS)
-        );
+        int n = usb_serial_jtag_write_bytes(text + sent, len - sent,
+                                            pdMS_TO_TICKS(USB_WRITE_TIMEOUT_MS));
 
         if (n <= 0) {
             break;
@@ -52,17 +49,11 @@ static void usb_print(const char *text)
         sent += n;
     }
 
-    usb_serial_jtag_wait_tx_done(
-        pdMS_TO_TICKS(USB_TX_DONE_TIMEOUT_MS)
-    );
+    usb_serial_jtag_wait_tx_done(pdMS_TO_TICKS(USB_TX_DONE_TIMEOUT_MS));
 }
 
 // Leer una linea del USB.
-static void usb_read_line(
-    char *buffer,
-    size_t size,
-    bool echo
-)
+static void usb_read_line(char *buffer, size_t size, bool echo)
 {
     size_t pos = 0;
     bool overflow = false;
@@ -71,11 +62,7 @@ static void usb_read_line(
     memset(buffer, 0, size);
 
     while (true) {
-        int n = usb_serial_jtag_read_bytes(
-            &ch,
-            1,
-            pdMS_TO_TICKS(USB_READ_TIMEOUT_MS)
-        );
+        int n = usb_serial_jtag_read_bytes(&ch, 1, pdMS_TO_TICKS(USB_READ_TIMEOUT_MS));
 
         if (n <= 0) {
             continue;
@@ -128,49 +115,27 @@ static void wifi_console_task(void *arg)
     while (true) {
         usb_print("\r\nComando> ");
 
-        usb_read_line(
-            command,
-            sizeof(command),
-            true
-        );
+        usb_read_line(command, sizeof(command), true);
 
         if (strcmp(command, "wifi") == 0) {
             usb_print("SSID: ");
 
-            usb_read_line(
-                ssid,
-                sizeof(ssid),
-                true
-            );
+            usb_read_line(ssid, sizeof(ssid), true);
 
             usb_print("Password: ");
 
-            usb_read_line(
-                password,
-                sizeof(password),
-                false
-            );
+            usb_read_line(password, sizeof(password), false);
 
-            esp_err_t err =
-                wifi_manager_set_credentials(
-                    ssid,
-                    password
-                );
+            esp_err_t err = wifi_manager_set_credentials(ssid, password);
 
             memset(password, 0, sizeof(password));
             memset(ssid, 0, sizeof(ssid));
 
             if (err == ESP_OK) {
-                usb_print(
-                    "Credenciales guardadas en NVS.\r\n"
-                );
-                usb_print(
-                    "Conectando al Wi-Fi...\r\n"
-                );
+                usb_print("Credenciales guardadas en NVS.\r\n");
+                usb_print("Conectando al Wi-Fi...\r\n");
             } else {
-                usb_print(
-                    "Error configurando Wi-Fi.\r\n"
-                );
+                usb_print("Error configurando Wi-Fi.\r\n");
             }
 
         } else if (strcmp(command, "status") == 0) {
@@ -208,37 +173,24 @@ void app_main(void)
 
     // Inicializar USB-Serial/JTAG.
     if (!usb_serial_jtag_is_driver_installed()) {
-        usb_serial_jtag_driver_config_t usb_cfg = {
-            .rx_buffer_size = USB_RX_BUFFER_BYTES,
-            .tx_buffer_size = USB_TX_BUFFER_BYTES
-        };
+        usb_serial_jtag_driver_config_t usb_cfg = {.rx_buffer_size = USB_RX_BUFFER_BYTES,
+                                                   .tx_buffer_size = USB_TX_BUFFER_BYTES};
 
-        ESP_ERROR_CHECK(
-            usb_serial_jtag_driver_install(&usb_cfg)
-        );
+        ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_cfg));
     }
 
     // Inicializar Wi-Fi usando NVS.
     gtfs_auto_init();
-ESP_ERROR_CHECK(wifi_manager_init());
+    ESP_ERROR_CHECK(wifi_manager_init());
     ESP_ERROR_CHECK(renfe_client_start());
-gtfs_auto_start();
+    gtfs_auto_start();
 
     // Crear consola USB independiente.
-    BaseType_t result = xTaskCreate(
-        wifi_console_task,
-        "wifi_console",
-        CONSOLE_TASK_STACK_BYTES,
-        NULL,
-        5,
-        NULL
-    );
+    BaseType_t result =
+        xTaskCreate(wifi_console_task, "wifi_console", CONSOLE_TASK_STACK_BYTES, NULL, 5, NULL);
 
     if (result != pdPASS) {
-        ESP_LOGE(
-            TAG,
-            "No se pudo crear la consola USB"
-        );
+        ESP_LOGE(TAG, "No se pudo crear la consola USB");
     }
 
     ESP_LOGI(TAG, "Sistema iniciado");
@@ -254,24 +206,14 @@ gtfs_auto_start();
 
             if (err == ESP_OK) {
                 http_started = true;
-                ESP_LOGI(
-                    TAG,
-                    "API HTTP disponible en puerto 80"
-                );
+                ESP_LOGI(TAG, "API HTTP disponible en puerto 80");
             } else {
-                ESP_LOGE(
-                    TAG,
-                    "Error iniciando API: %s",
-                    esp_err_to_name(err)
-                );
+                ESP_LOGE(TAG, "Error iniciando API: %s", esp_err_to_name(err));
             }
         }
 
         if (!connected && http_started) {
-            ESP_LOGW(
-                TAG,
-                "Sin Wi-Fi. Deteniendo API HTTP"
-            );
+            ESP_LOGW(TAG, "Sin Wi-Fi. Deteniendo API HTTP");
 
             api_server_stop();
             http_started = false;

@@ -17,26 +17,31 @@
 static const char *TAG = "TT_CONFIG";
 
 // One local feed, with a modest bounding box around the Pozuelo corridor.
-static const char FEEDS_JSON[] =
-    "[{\"code\":\"renfe\",\"name\":\"Renfe Cercanias Madrid\","
-    "\"description\":\"" RENFE_POZUELO_NAME ": " RENFE_LINE_C7_NAME " y " RENFE_LINE_C10_NAME " hacia " RENFE_PRINCIPE_PIO_NAME "\","
-    "\"bounds\":[" RENFE_AREA_WEST_JSON "," RENFE_AREA_SOUTH_JSON "," RENFE_AREA_EAST_JSON "," RENFE_AREA_NORTH_JSON "]}]";
+static const char FEEDS_JSON[] = "[{\"code\":\"renfe\",\"name\":\"Renfe Cercanias Madrid\","
+                                 "\"description\":\"" RENFE_POZUELO_NAME ": " RENFE_LINE_C7_NAME
+                                 " y " RENFE_LINE_C10_NAME " hacia " RENFE_PRINCIPE_PIO_NAME "\","
+                                 "\"bounds\":[" RENFE_AREA_WEST_JSON "," RENFE_AREA_SOUTH_JSON
+                                 "," RENFE_AREA_EAST_JSON "," RENFE_AREA_NORTH_JSON "]}]";
 
 static const char SERVICE_AREAS_JSON[] =
     "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\","
     "\"properties\":{\"code\":\"renfe\",\"name\":\"Renfe Cercanias Madrid\"},"
-    "\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[["
-    RENFE_AREA_WEST_JSON "," RENFE_AREA_SOUTH_JSON "],[" RENFE_AREA_EAST_JSON "," RENFE_AREA_SOUTH_JSON "],[" RENFE_AREA_EAST_JSON "," RENFE_AREA_NORTH_JSON "],[" RENFE_AREA_WEST_JSON "," RENFE_AREA_NORTH_JSON "],[" RENFE_AREA_WEST_JSON "," RENFE_AREA_SOUTH_JSON "]]]}}]}";
+    "\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[" RENFE_AREA_WEST_JSON
+    "," RENFE_AREA_SOUTH_JSON "],[" RENFE_AREA_EAST_JSON "," RENFE_AREA_SOUTH_JSON
+    "],[" RENFE_AREA_EAST_JSON "," RENFE_AREA_NORTH_JSON "],[" RENFE_AREA_WEST_JSON
+    "," RENFE_AREA_NORTH_JSON "],[" RENFE_AREA_WEST_JSON "," RENFE_AREA_SOUTH_JSON "]]]}}]}";
 
 static const char STOPS_JSON[] =
     "[{\"stopId\":\"" RENFE_TT_POZUELO_STOP_ID "\",\"stopCode\":\"" RENFE_POZUELO_STOP_ID "\","
-    "\"name\":\"" RENFE_POZUELO_NAME "\",\"lat\":" RENFE_POZUELO_JSON_LAT ",\"lon\":" RENFE_POZUELO_JSON_LON "}]";
+    "\"name\":\"" RENFE_POZUELO_NAME "\",\"lat\":" RENFE_POZUELO_JSON_LAT
+    ",\"lon\":" RENFE_POZUELO_JSON_LON "}]";
 
-static const char ROUTES_JSON[] =
-    "[{\"routeId\":\"" RENFE_TT_ROUTE_C7 "\",\"name\":\"" RENFE_LINE_C7_NAME "\",\"color\":\"E53935\","
-    "\"headsigns\":[\"" RENFE_PRINCIPE_PIO_NAME "\"]},"
-    "{\"routeId\":\"" RENFE_TT_ROUTE_C10 "\",\"name\":\"" RENFE_LINE_C10_NAME "\",\"color\":\"C4D600\","
-    "\"headsigns\":[\"" RENFE_PRINCIPE_PIO_NAME "\"]}]";
+static const char ROUTES_JSON[] = "[{\"routeId\":\"" RENFE_TT_ROUTE_C7
+                                  "\",\"name\":\"" RENFE_LINE_C7_NAME "\",\"color\":\"E53935\","
+                                  "\"headsigns\":[\"" RENFE_PRINCIPE_PIO_NAME "\"]},"
+                                  "{\"routeId\":\"" RENFE_TT_ROUTE_C10
+                                  "\",\"name\":\"" RENFE_LINE_C10_NAME "\",\"color\":\"C4D600\","
+                                  "\"headsigns\":[\"" RENFE_PRINCIPE_PIO_NAME "\"]}]";
 
 static void set_cors_headers(httpd_req_t *req)
 {
@@ -105,10 +110,12 @@ static esp_err_t schedule_handler(httpd_req_t *req)
     int64_t now = (int64_t)time(NULL);
     bool exists = renfe_state_get(&snapshot);
     int64_t age = exists ? now - snapshot.calculated_unix : -1;
-    bool fresh = exists && age >= -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS && age <= RENFE_SNAPSHOT_MAX_AGE_SECONDS;
+    bool fresh = exists && age >= -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS &&
+                 age <= RENFE_SNAPSHOT_MAX_AGE_SECONDS;
 
     cJSON *root = cJSON_CreateObject();
-    if (!root) return ESP_ERR_NO_MEM;
+    if (!root)
+        return ESP_ERR_NO_MEM;
     cJSON *trips = cJSON_AddArrayToObject(root, "trips");
     if (!trips) {
         cJSON_Delete(root);
@@ -117,15 +124,20 @@ static esp_err_t schedule_handler(httpd_req_t *req)
     if (fresh) {
         for (size_t i = 0; i < snapshot.count && i < RENFE_ARRIVAL_MAX; ++i) {
             const renfe_arrival_t *a = &snapshot.arrivals[i];
-            if (a->estimated_unix < now - RENFE_ARRIVAL_PAST_GRACE_SECONDS) continue;
+            if (a->estimated_unix < now - RENFE_ARRIVAL_PAST_GRACE_SECONDS)
+                continue;
             cJSON *trip = cJSON_CreateObject();
-            if (!trip) break;
+            if (!trip)
+                break;
             cJSON_AddStringToObject(trip, "tripId", a->trip_id);
             cJSON_AddStringToObject(trip, "stopId", RENFE_TT_POZUELO_STOP_ID);
-            cJSON_AddStringToObject(trip, "routeId", a->line == RENFE_LINE_C7 ? RENFE_TT_ROUTE_C7 : RENFE_TT_ROUTE_C10);
-            cJSON_AddStringToObject(trip, "routeName", a->line == RENFE_LINE_C7 ? RENFE_LINE_C7_NAME : RENFE_LINE_C10_NAME);
+            cJSON_AddStringToObject(
+                trip, "routeId", a->line == RENFE_LINE_C7 ? RENFE_TT_ROUTE_C7 : RENFE_TT_ROUTE_C10);
+            cJSON_AddStringToObject(trip, "routeName",
+                                    a->line == RENFE_LINE_C7 ? RENFE_LINE_C7_NAME
+                                                             : RENFE_LINE_C10_NAME);
             cJSON_AddStringToObject(trip, "routeColor",
-                a->line == RENFE_LINE_C7 ? "E53935" : "C4D600");
+                                    a->line == RENFE_LINE_C7 ? "E53935" : "C4D600");
             cJSON_AddStringToObject(trip, "stopName", RENFE_POZUELO_NAME);
             cJSON_AddStringToObject(trip, "headsign", RENFE_PRINCIPE_PIO_NAME);
             cJSON_AddNumberToObject(trip, "arrivalTime", (double)a->estimated_unix);
@@ -136,7 +148,8 @@ static esp_err_t schedule_handler(httpd_req_t *req)
     }
     char *body = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
-    if (!body) return ESP_ERR_NO_MEM;
+    if (!body)
+        return ESP_ERR_NO_MEM;
     esp_err_t err = json_send(req, body);
     free(body);
     ESP_LOGI(TAG, "GET /schedule/... freshness=%d", fresh);
@@ -151,9 +164,8 @@ esp_err_t tt_config_api_register(httpd_handle_t server)
         {.uri = "/stops/within/*", .method = HTTP_GET, .handler = within_handler},
         {.uri = "/stops/*", .method = HTTP_GET, .handler = stop_routes_handler},
         {.uri = "/schedule/*", .method = HTTP_GET, .handler = schedule_handler},
-        {.uri = "/*", .method = HTTP_OPTIONS, .handler = options_handler}
-    };
-    for (size_t i = 0; i < sizeof(routes)/sizeof(routes[0]); ++i) {
+        {.uri = "/*", .method = HTTP_OPTIONS, .handler = options_handler}};
+    for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         esp_err_t err = httpd_register_uri_handler(server, &routes[i]);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Error registrando '%s': %s", routes[i].uri, esp_err_to_name(err));

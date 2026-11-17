@@ -1,0 +1,4 @@
+# Generated files and third-party dependencies.
+build/**
+managed_components/**
+main/renfe_station_names.h

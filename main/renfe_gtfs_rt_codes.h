@@ -13,16 +13,9 @@ enum {
 };
 
 // TripDescriptor.ScheduleRelationship (distinto de StopTimeUpdate).
-enum {
-    RENFE_TRIP_CANCELED = 3,
-    RENFE_TRIP_DUPLICATED = 6,
-    RENFE_TRIP_DELETED = 7
-};
+enum { RENFE_TRIP_CANCELED = 3, RENFE_TRIP_DUPLICATED = 6, RENFE_TRIP_DELETED = 7 };
 
 // StopTimeUpdate.ScheduleRelationship.
-enum {
-    RENFE_STOP_SKIPPED = 1,
-    RENFE_STOP_NO_DATA = 2
-};
+enum { RENFE_STOP_SKIPPED = 1, RENFE_STOP_NO_DATA = 2 };
 
 #endif

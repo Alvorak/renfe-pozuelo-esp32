@@ -23,7 +23,7 @@ typedef struct {
     double latitude;
     double longitude;
     int current_stop_sequence;
-    
+
 } renfe_vehicle_t;
 
 typedef struct {
@@ -40,8 +40,4 @@ typedef struct {
 void renfe_parser_init(void);
 
 // Interpreta los vehículos recibidos desde Renfe.
-esp_err_t renfe_parse_vehicles(
-    const char *json,
-    size_t length,
-    renfe_parse_result_t *result
-);
+esp_err_t renfe_parse_vehicles(const char *json, size_t length, renfe_parse_result_t *result);

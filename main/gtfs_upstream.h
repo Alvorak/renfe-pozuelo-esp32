@@ -13,8 +13,7 @@ typedef struct {
 
 // sequence=-1 si el feed solo comunica stopId; exige coincidencia unica.
 // Ignora estaciones posteriores a Pozuelo.
-bool gtfs_upstream_lookup(const char *trip_id, uint16_t pozuelo_sequence,
-                          const char *stop_id, int sequence,
-                          gtfs_upstream_stop_t *out);
+bool gtfs_upstream_lookup(const char *trip_id, uint16_t pozuelo_sequence, const char *stop_id,
+                          int sequence, gtfs_upstream_stop_t *out);
 
 bool gtfs_upstream_is_valid(void);

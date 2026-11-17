@@ -17,20 +17,9 @@ typedef struct {
 } gtfs_arrival_t;
 
 // Devuelve las proximas llegadas teoricas, en orden cronologico.
-esp_err_t gtfs_index_get_next(
-    time_t now,
-    gtfs_arrival_t *results,
-    size_t capacity,
-    size_t *count
-);
+esp_err_t gtfs_index_get_next(time_t now, gtfs_arrival_t *results, size_t capacity, size_t *count);
 
 // Incluye llegadas teoricas pasadas que pudieran estar retrasadas.
 // Se requiere un indice valido y vigente.
-esp_err_t gtfs_index_get_window(
-    time_t now,
-    int64_t seconds_before,
-    int64_t seconds_after,
-    gtfs_arrival_t *results,
-    size_t capacity,
-    size_t *count
-);
+esp_err_t gtfs_index_get_window(time_t now, int64_t seconds_before, int64_t seconds_after,
+                                gtfs_arrival_t *results, size_t capacity, size_t *count);
