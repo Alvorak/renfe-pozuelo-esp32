@@ -23,6 +23,13 @@
 #define USB_READ_TIMEOUT_MS 100
 #define SERVER_SUPERVISION_INTERVAL_MS 500
 
+#define USB_RX_BUFFER_BYTES 256
+#define USB_TX_BUFFER_BYTES 512
+#define CONSOLE_TASK_STACK_BYTES 4096
+#define CONSOLE_COMMAND_BUFFER_BYTES 32
+#define CONSOLE_SSID_BUFFER_BYTES 33
+#define CONSOLE_PASSWORD_BUFFER_BYTES 65
+
 static const char *TAG = "RENFE";
 
 // Enviar texto directamente al USB.
@@ -108,9 +115,9 @@ static void usb_read_line(
 // Consola de configuracion USB.
 static void wifi_console_task(void *arg)
 {
-    char command[32];
-    char ssid[33];
-    char password[65];
+    char command[CONSOLE_COMMAND_BUFFER_BYTES];
+    char ssid[CONSOLE_SSID_BUFFER_BYTES];
+    char password[CONSOLE_PASSWORD_BUFFER_BYTES];
 
     usb_print("\r\n");
     usb_print("========================\r\n");
@@ -202,8 +209,8 @@ void app_main(void)
     // Inicializar USB-Serial/JTAG.
     if (!usb_serial_jtag_is_driver_installed()) {
         usb_serial_jtag_driver_config_t usb_cfg = {
-            .rx_buffer_size = 256,
-            .tx_buffer_size = 512
+            .rx_buffer_size = USB_RX_BUFFER_BYTES,
+            .tx_buffer_size = USB_TX_BUFFER_BYTES
         };
 
         ESP_ERROR_CHECK(
@@ -221,7 +228,7 @@ gtfs_auto_start();
     BaseType_t result = xTaskCreate(
         wifi_console_task,
         "wifi_console",
-        4096,
+        CONSOLE_TASK_STACK_BYTES,
         NULL,
         5,
         NULL

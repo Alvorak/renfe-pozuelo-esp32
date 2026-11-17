@@ -33,6 +33,15 @@
 
 #define WS_SLOW_BROADCAST_THRESHOLD_MS 1500
 
+#define WS_HEADSIGN_BUFFER_BYTES 96
+#define WS_HEALTH_JSON_BUFFER_BYTES 256
+#define WS_HTTP_MAX_URI_HANDLERS 10
+#define WS_HTTP_BACKLOG_CONNECTIONS 5
+#define WS_HTTP_TASK_STACK_BYTES 8192
+#define WS_HTTP_MAX_HEADER_BYTES 4096
+#define WS_BROADCAST_TASK_STACK_BYTES 3072
+#define WS_CONTROL_PAYLOAD_MAX_BYTES 125
+
 static const char *TAG = "WS_SERVER";
 static httpd_handle_t s_server;
 static TaskHandle_t s_broadcast_task;
@@ -129,7 +138,7 @@ static esp_err_t send_schedule(httpd_handle_t hd, int fd, int limit)
             ok &= cJSON_AddStringToObject(trip, "stopName", "Pozuelo") != NULL;
             // La pantalla pinta headsign debajo del nombre de la linea.
             // STOPPED_AT es estacion actual; los otros estados son destino siguiente.
-            char headsign[96] = "Sin posicion";
+            char headsign[WS_HEADSIGN_BUFFER_BYTES] = "Sin posicion";
             const int64_t position_age = now - arrival->position_timestamp;
             if (arrival->has_position && arrival->current_stop_name[0] &&
                 position_age >= -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS && position_age <= RENFE_FEED_MAX_AGE_SECONDS)
@@ -198,9 +207,9 @@ static esp_err_t ws_uri_handler(httpd_req_t *req)
     {
         // Control frames: consumir el payload, y responder a PING si llega.
         // Los controles WebSocket nunca deben superar 125 bytes.
-        if (frame.len > 125)
+        if (frame.len > WS_CONTROL_PAYLOAD_MAX_BYTES)
             return ESP_FAIL;
-        uint8_t control_payload[125];
+        uint8_t control_payload[WS_CONTROL_PAYLOAD_MAX_BYTES];
         frame.payload = control_payload;
         if (httpd_ws_recv_frame(req, &frame, frame.len) != ESP_OK)
             return ESP_FAIL;
@@ -318,7 +327,7 @@ static esp_err_t ws_health_handler(httpd_req_t *req)
     const uint32_t now = esp_log_timestamp();
     const bool ever_ok = s_last_broadcast_ok_ms != 0;
     const uint32_t age_ms = ever_ok ? (uint32_t)(now - s_last_broadcast_ok_ms) : 0;
-    char json[256];
+    char json[WS_HEALTH_JSON_BUFFER_BYTES];
     snprintf(json, sizeof(json),
              "{\"running\":true,\"ws_clients\":%d,\"subscribers\":%d,"
              "\"last_ok_age_ms\":%lu,\"ever_sent\":%s,\"send_failures\":%lu,"
@@ -419,15 +428,15 @@ esp_err_t ws_server_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = WS_PORT;
     config.ctrl_port = WS_CONTROL_PORT;
-    config.max_uri_handlers = 10;
+    config.max_uri_handlers = WS_HTTP_MAX_URI_HANDLERS;
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.max_open_sockets = WS_MAX_SOCKETS;
-    config.stack_size = 8192;
+    config.stack_size = WS_HTTP_TASK_STACK_BYTES;
     // El firmware Transit Tracker incluye User-Agent y X-Device-Id
     // en la peticion de Upgrade; admitir cabeceras mas largas.
-    config.max_req_hdr_len = 4096;
+    config.max_req_hdr_len = WS_HTTP_MAX_HEADER_BYTES;
     // Permitir completar el Upgrade en redes Wi-Fi lentas.
-    config.backlog_conn = 5;
+    config.backlog_conn = WS_HTTP_BACKLOG_CONNECTIONS;
     config.lru_purge_enable = true;
     // Limitar los envios bloqueantes: un peer que no lee no debe
     // secuestrar 10 segundos la tarea HTTPD en cada actualizacion.
@@ -483,7 +492,7 @@ esp_err_t ws_server_start(void)
     s_send_failures = 0;
     s_last_broadcast_ok_ms = 0;
     s_running = true;
-    BaseType_t created = xTaskCreate(broadcast_task, "ws_broadcast", 3072,
+    BaseType_t created = xTaskCreate(broadcast_task, "ws_broadcast", WS_BROADCAST_TASK_STACK_BYTES,
                                      server, 3, &s_broadcast_task);
     if (created != pdPASS)
     {

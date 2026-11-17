@@ -11,6 +11,9 @@
 #include "esp_log.h"
 
 #define GTFS_CANDIDATES 96
+#define PREDICTION_TRIP_ID_BUFFER_BYTES 33
+#define UPDATE_START_DATE_BUFFER_BYTES 16
+
 static const char *TAG = "RENFE_ARRIVALS";
 
 static const cJSON *field(const cJSON *obj, const char *key)
@@ -133,7 +136,7 @@ typedef struct {
 
 typedef struct {
     bool used;
-    char trip_id[33];
+    char trip_id[PREDICTION_TRIP_ID_BUFFER_BYTES];
     uint32_t service_date;
     int64_t predicted_unix;
     int64_t observed_unix;
@@ -363,7 +366,7 @@ esp_err_t renfe_arrivals_calculate(time_t now,
                 strcmp(trip_id->valuestring, scheduled->trip_id) != 0) continue;
             const cJSON *date = field(trip, "startDate");
             if (cJSON_IsString(date)) {
-                char buf[16];
+                char buf[UPDATE_START_DATE_BUFFER_BYTES];
                 const char *s = date->valuestring;
                 size_t len = 0;
                 for (size_t k = 0; s[k] && len < sizeof(buf) - 1; ++k)

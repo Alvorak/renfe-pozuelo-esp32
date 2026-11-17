@@ -19,18 +19,25 @@
 #define API_PORT 80
 #define ARRIVALS_URI "/api/renfe/pozuelo-principe-pio"
 
+#define API_TIMESTAMP_BUFFER_BYTES 32
+#define API_QUERY_BUFFER_BYTES 128
+#define API_LIMIT_BUFFER_BYTES 16
+#define API_SERVICE_DATE_BUFFER_BYTES 16
+#define API_MAX_URI_HANDLERS 4
+#define API_TASK_STACK_BYTES 6144
+
 static const char *TAG = "API_SERVER";
 static httpd_handle_t s_server = NULL;
 
-static void iso_utc(int64_t seconds, char output[32])
+static void iso_utc(int64_t seconds, char output[API_TIMESTAMP_BUFFER_BYTES])
 {
     time_t stamp = (time_t)seconds;
     struct tm parts = {0};
     if (gmtime_r(&stamp, &parts) &&
-        strftime(output, 32, "%Y-%m-%dT%H:%M:%SZ", &parts) > 0) {
+        strftime(output, API_TIMESTAMP_BUFFER_BYTES, "%Y-%m-%dT%H:%M:%SZ", &parts) > 0) {
         return;
     }
-    snprintf(output, 32, "1970-01-01T00:00:00Z");
+    snprintf(output, API_TIMESTAMP_BUFFER_BYTES, "1970-01-01T00:00:00Z");
 }
 
 static esp_err_t send_json(httpd_req_t *req, cJSON *root, const char *status)
@@ -87,14 +94,14 @@ static bool read_limit(httpd_req_t *req, int *limit)
     *limit = 2;
     size_t len = httpd_req_get_url_query_len(req);
     if (!len) return true;
-    if (len >= 128) return false;
+    if (len >= API_QUERY_BUFFER_BYTES) return false;
 
-    char query[128];
+    char query[API_QUERY_BUFFER_BYTES];
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK) {
         return false;
     }
 
-    char value[16];
+    char value[API_LIMIT_BUFFER_BYTES];
     esp_err_t err = httpd_query_key_value(query, "limit", value, sizeof(value));
     if (err == ESP_ERR_NOT_FOUND) return true;
     if (err != ESP_OK || value[0] == '\0') return false;
@@ -135,9 +142,9 @@ static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
         item->source == RENFE_ETA_VEHICLE ? "vehicle_and_schedule" :
         item->source == RENFE_ETA_CACHED ? "last_prediction" : "reported_delay";
 
-    char arrival_iso[32];
-    char scheduled_iso[32];
-    char service_date[16];
+    char arrival_iso[API_TIMESTAMP_BUFFER_BYTES];
+    char scheduled_iso[API_TIMESTAMP_BUFFER_BYTES];
+    char service_date[API_SERVICE_DATE_BUFFER_BYTES];
     iso_utc(item->estimated_unix, arrival_iso);
     iso_utc(item->scheduled_unix, scheduled_iso);
     snprintf(service_date, sizeof(service_date), "%08lu",
@@ -193,7 +200,7 @@ static esp_err_t arrivals_get_handler(httpd_req_t *req)
 
     time_t current = time(NULL);
     int64_t now = (int64_t)current;
-    char timestamp[32];
+    char timestamp[API_TIMESTAMP_BUFFER_BYTES];
     iso_utc(now, timestamp);
 
     renfe_snapshot_t snapshot = {0};
@@ -223,7 +230,7 @@ static esp_err_t arrivals_get_handler(httpd_req_t *req)
     cJSON *departures = cJSON_AddArrayToObject(root, "departures");
 
     if (fresh) {
-        char calculated_at[32];
+        char calculated_at[API_TIMESTAMP_BUFFER_BYTES];
         iso_utc(snapshot.calculated_unix, calculated_at);
         cJSON_AddStringToObject(root, "calculated_at", calculated_at);
         cJSON_AddNumberToObject(root, "snapshot_age_seconds", (double)age);
@@ -264,8 +271,8 @@ esp_err_t api_server_start(void)
     ESP_LOGI(TAG, "Iniciando servidor HTTP...");
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = API_PORT;
-    config.max_uri_handlers = 4;
-    config.stack_size = 6144;
+    config.max_uri_handlers = API_MAX_URI_HANDLERS;
+    config.stack_size = API_TASK_STACK_BYTES;
     config.lru_purge_enable = true;
 
     httpd_handle_t server = NULL;

@@ -32,6 +32,10 @@
 // Espera cooperativa en ticks del scheduler, no en milisegundos.
 #define GTFS_DOWNLOAD_YIELD_TICKS 1
 
+#define GTFS_HTTP_RX_BUFFER_BYTES 4096
+#define GTFS_DOWNLOAD_BUFFER_BYTES 4096
+#define GTFS_TASK_STACK_BYTES 8192
+
 static const char *TAG = "GTFS_AUTO";
 static const esp_partition_t *slots[2];
 static const uint8_t *selected_data;
@@ -164,7 +168,7 @@ static esp_err_t download_candidate(int target) {
     esp_http_client_config_t cfg = {
         .url = UPDATER_URL, .method = HTTP_METHOD_GET,
         .crt_bundle_attach = esp_crt_bundle_attach,
-        .timeout_ms = GTFS_HTTP_TIMEOUT_MS, .buffer_size = 4096,
+        .timeout_ms = GTFS_HTTP_TIMEOUT_MS, .buffer_size = GTFS_HTTP_RX_BUFFER_BYTES,
         .disable_auto_redirect = false,
     };
     esp_http_client_handle_t client = esp_http_client_init(&cfg);
@@ -196,13 +200,13 @@ static esp_err_t download_candidate(int target) {
     }
     if (esp_partition_erase_range(slots[target], 0, SLOT_BYTES) != ESP_OK ||
         esp_partition_write(slots[target], 0, header, HDR_SIZE) != ESP_OK) goto done;
-    uint8_t *buffer = malloc(4096);
+    uint8_t *buffer = malloc(GTFS_DOWNLOAD_BUFFER_BYTES);
     if (!buffer) { result = ESP_ERR_NO_MEM; goto done; }
     size_t offset = HDR_SIZE;
     size_t expected = HDR_SIZE + (size_t)info.primary_len + info.upstream_len;
     while (offset < expected) {
         int want = (int)(expected - offset);
-        if (want > 4096) want = 4096;
+        if (want > GTFS_DOWNLOAD_BUFFER_BYTES) want = GTFS_DOWNLOAD_BUFFER_BYTES;
         int n = esp_http_client_read(client, (char*)buffer, want);
         if (n <= 0 || esp_partition_write(slots[target], offset, buffer, n) != ESP_OK) break;
         offset += n;
@@ -255,6 +259,6 @@ static void gtfs_update_task(void *arg) {
 void gtfs_auto_start(void) {
     if (started) return;
     if (!slots[0] || !slots[1]) return;
-    started = xTaskCreate(gtfs_update_task, "gtfs_auto", 8192, NULL, 3, NULL) == pdPASS;
+    started = xTaskCreate(gtfs_update_task, "gtfs_auto", GTFS_TASK_STACK_BYTES, NULL, 3, NULL) == pdPASS;
     if (!started) ESP_LOGE(TAG, "Cannot start GTFS task");
 }

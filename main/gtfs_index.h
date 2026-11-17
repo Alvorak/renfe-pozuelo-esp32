@@ -6,8 +6,10 @@
 
 #include "esp_err.h"
 
+#define GTFS_TRIP_ID_BUFFER_BYTES 33
+
 typedef struct {
-    char trip_id[33];
+    char trip_id[GTFS_TRIP_ID_BUFFER_BYTES];
     int64_t arrival_unix;
     uint32_t service_date;
     uint16_t stop_sequence;

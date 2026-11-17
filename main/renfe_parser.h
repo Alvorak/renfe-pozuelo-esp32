@@ -6,11 +6,16 @@
 #include "esp_err.h"
 
 #define RENFE_MAX_CANDIDATES 64
+#define RENFE_VEHICLE_TRIP_ID_BUFFER_BYTES 64
+#define RENFE_VEHICLE_ROUTE_ID_BUFFER_BYTES 32
+#define RENFE_VEHICLE_LABEL_BUFFER_BYTES 64
+#define RENFE_VEHICLE_STOP_ID_BUFFER_BYTES 32
+
 typedef struct {
-    char trip_id[64];
-    char route_id[32];
-    char label[64];
-    char stop_id[32];
+    char trip_id[RENFE_VEHICLE_TRIP_ID_BUFFER_BYTES];
+    char route_id[RENFE_VEHICLE_ROUTE_ID_BUFFER_BYTES];
+    char label[RENFE_VEHICLE_LABEL_BUFFER_BYTES];
+    char stop_id[RENFE_VEHICLE_STOP_ID_BUFFER_BYTES];
 
     int current_status;
     int64_t timestamp;

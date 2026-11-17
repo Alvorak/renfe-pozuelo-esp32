@@ -34,6 +34,12 @@
 #define WIFI_RECHECK_INTERVAL_MS 1000
 #define SNTP_RECHECK_INTERVAL_MS 2000
 
+#define RENFE_HTTP_RX_BUFFER_BYTES 2048
+#define RENFE_HTTP_TX_BUFFER_BYTES 1024
+#define RENFE_TASK_STACK_BYTES 12288
+#define GTFS_DIAGNOSTIC_NEXT_CAPACITY 2
+#define GTFS_DIAGNOSTIC_WINDOW_CAPACITY 32
+
 static const char *TAG = "RENFE_CLIENT";
 static renfe_parse_result_t s_last_vehicles;
 static bool s_have_vehicles = false;
@@ -125,8 +131,8 @@ static esp_err_t download_vehicle_positions(void)
         .user_data = &state,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = VEHICLE_POSITIONS_HTTP_TIMEOUT_MS,
-        .buffer_size = 2048,
-        .buffer_size_tx = 1024,
+        .buffer_size = RENFE_HTTP_RX_BUFFER_BYTES,
+        .buffer_size_tx = RENFE_HTTP_TX_BUFFER_BYTES,
         .disable_auto_redirect = true};
 
     esp_http_client_handle_t client =
@@ -345,8 +351,8 @@ static void probe_trip_updates(void)
         .user_data = &state,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = TRIP_UPDATES_HTTP_TIMEOUT_MS,
-        .buffer_size = 2048,
-        .buffer_size_tx = 1024,
+        .buffer_size = RENFE_HTTP_RX_BUFFER_BYTES,
+        .buffer_size_tx = RENFE_HTTP_TX_BUFFER_BYTES,
         .disable_auto_redirect = true
     };
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -435,13 +441,13 @@ static void renfe_task(void *arg)
         // 1. LEER HORARIOS GTFS DESDE FLASH
         // =========================================
 
-        gtfs_arrival_t next[2] = {0};
+        gtfs_arrival_t next[GTFS_DIAGNOSTIC_NEXT_CAPACITY] = {0};
         size_t found = 0;
 
         esp_err_t gtfs_err = gtfs_index_get_next(
             now,
             next,
-            2,
+            GTFS_DIAGNOSTIC_NEXT_CAPACITY,
             &found);
 
         if (gtfs_err == ESP_OK)
@@ -490,7 +496,7 @@ static void renfe_task(void *arg)
         // 2. VENTANA DE HORARIOS (SOLO DIAGNOSTICO)
         // =========================================
 
-        gtfs_arrival_t window[32] = {0};
+        gtfs_arrival_t window[GTFS_DIAGNOSTIC_WINDOW_CAPACITY] = {0};
         size_t window_count = 0;
 
         esp_err_t window_err = gtfs_index_get_window(
@@ -498,7 +504,7 @@ static void renfe_task(void *arg)
             30 * 60,  // Horarios hasta 30 min en el pasado.
             60 * 60,  // Horarios hasta 60 min en el futuro.
             window,
-            32,
+            GTFS_DIAGNOSTIC_WINDOW_CAPACITY,
             &window_count);
 
         if (window_err == ESP_OK)
@@ -548,7 +554,7 @@ esp_err_t renfe_client_start(void)
     BaseType_t result = xTaskCreate(
         renfe_task,
         "renfe_client",
-        12288,
+        RENFE_TASK_STACK_BYTES,
         NULL,
         4,
         NULL);

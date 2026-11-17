@@ -6,6 +6,10 @@
 
 #define RENFE_ARRIVAL_MAX 2
 
+#define RENFE_ARRIVAL_TRIP_ID_BUFFER_BYTES 33
+#define RENFE_ARRIVAL_CURRENT_STOP_ID_BUFFER_BYTES 32
+#define RENFE_ARRIVAL_CURRENT_STOP_NAME_BUFFER_BYTES 64
+
 typedef enum {
     RENFE_ETA_STOP_TIME = 1,
     RENFE_ETA_TRIP_DELAY = 2,
@@ -15,7 +19,7 @@ typedef enum {
 } renfe_eta_source_t;
 
 typedef struct {
-    char trip_id[33];
+    char trip_id[RENFE_ARRIVAL_TRIP_ID_BUFFER_BYTES];
     uint16_t line;
     uint32_t service_date;
     int64_t scheduled_unix;
@@ -24,8 +28,8 @@ typedef struct {
     renfe_eta_source_t source;
     // Posicion GTFS-RT asociada por tripId; NO modifica el calculo del ETA.
     bool has_position;
-    char current_stop_id[32];
-    char current_stop_name[64];
+    char current_stop_id[RENFE_ARRIVAL_CURRENT_STOP_ID_BUFFER_BYTES];
+    char current_stop_name[RENFE_ARRIVAL_CURRENT_STOP_NAME_BUFFER_BYTES];
     int current_status;         // 0=INCOMING_AT, 1=STOPPED_AT, 2=IN_TRANSIT_TO
     int64_t position_timestamp; // Epoch UTC del feed de vehiculos.
 } renfe_arrival_t;
