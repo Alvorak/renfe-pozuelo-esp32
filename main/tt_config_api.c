@@ -1,4 +1,5 @@
 #include "tt_config_api.h"
+#include "renfe_railway_ids.h"
 #include "renfe_time_limits.h"
 
 #include <stdbool.h>
@@ -13,33 +14,29 @@
 #include "esp_log.h"
 #include "renfe_state.h"
 
-#define STOP_ID "renfe:10002"
-#define STOP_LAT (40.44761)
-#define STOP_LON (-3.80020)
-
 static const char *TAG = "TT_CONFIG";
 
 // One local feed, with a modest bounding box around the Pozuelo corridor.
 static const char FEEDS_JSON[] =
     "[{\"code\":\"renfe\",\"name\":\"Renfe Cercanias Madrid\","
-    "\"description\":\"Pozuelo: C-7 y C-10 hacia Principe Pio\","
-    "\"bounds\":[-3.92,40.39,-3.65,40.55]}]";
+    "\"description\":\"" RENFE_POZUELO_NAME ": " RENFE_LINE_C7_NAME " y " RENFE_LINE_C10_NAME " hacia " RENFE_PRINCIPE_PIO_NAME "\","
+    "\"bounds\":[" RENFE_AREA_WEST_JSON "," RENFE_AREA_SOUTH_JSON "," RENFE_AREA_EAST_JSON "," RENFE_AREA_NORTH_JSON "]}]";
 
 static const char SERVICE_AREAS_JSON[] =
     "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\","
     "\"properties\":{\"code\":\"renfe\",\"name\":\"Renfe Cercanias Madrid\"},"
     "\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[["
-    "-3.92,40.39],[-3.65,40.39],[-3.65,40.55],[-3.92,40.55],[-3.92,40.39]]]}}]}";
+    RENFE_AREA_WEST_JSON "," RENFE_AREA_SOUTH_JSON "],[" RENFE_AREA_EAST_JSON "," RENFE_AREA_SOUTH_JSON "],[" RENFE_AREA_EAST_JSON "," RENFE_AREA_NORTH_JSON "],[" RENFE_AREA_WEST_JSON "," RENFE_AREA_NORTH_JSON "],[" RENFE_AREA_WEST_JSON "," RENFE_AREA_SOUTH_JSON "]]]}}]}";
 
 static const char STOPS_JSON[] =
-    "[{\"stopId\":\"renfe:10002\",\"stopCode\":\"10002\","
-    "\"name\":\"Pozuelo\",\"lat\":40.44761,\"lon\":-3.80020}]";
+    "[{\"stopId\":\"" RENFE_TT_POZUELO_STOP_ID "\",\"stopCode\":\"" RENFE_POZUELO_STOP_ID "\","
+    "\"name\":\"" RENFE_POZUELO_NAME "\",\"lat\":" RENFE_POZUELO_JSON_LAT ",\"lon\":" RENFE_POZUELO_JSON_LON "}]";
 
 static const char ROUTES_JSON[] =
-    "[{\"routeId\":\"renfe:C7\",\"name\":\"C-7\",\"color\":\"E53935\","
-    "\"headsigns\":[\"Principe Pio\"]},"
-    "{\"routeId\":\"renfe:C10\",\"name\":\"C-10\",\"color\":\"C4D600\","
-    "\"headsigns\":[\"Principe Pio\"]}]";
+    "[{\"routeId\":\"" RENFE_TT_ROUTE_C7 "\",\"name\":\"" RENFE_LINE_C7_NAME "\",\"color\":\"E53935\","
+    "\"headsigns\":[\"" RENFE_PRINCIPE_PIO_NAME "\"]},"
+    "{\"routeId\":\"" RENFE_TT_ROUTE_C10 "\",\"name\":\"" RENFE_LINE_C10_NAME "\",\"color\":\"C4D600\","
+    "\"headsigns\":[\"" RENFE_PRINCIPE_PIO_NAME "\"]}]";
 
 static void set_cors_headers(httpd_req_t *req)
 {
@@ -93,7 +90,7 @@ static esp_err_t stop_routes_handler(httpd_req_t *req)
     // /stops/* is a wildcard suffix supported by esp_http_server.
     // It also covers the form renfe%3A10002 in the URL.
     const bool is_routes = strstr(req->uri, "/routes") != NULL;
-    const bool is_pozuelo = strstr(req->uri, "10002") != NULL;
+    const bool is_pozuelo = strstr(req->uri, RENFE_POZUELO_STOP_ID) != NULL;
     ESP_LOGI(TAG, "GET %s", req->uri);
     if (!is_routes) {
         httpd_resp_set_status(req, "404 Not Found");
@@ -124,13 +121,13 @@ static esp_err_t schedule_handler(httpd_req_t *req)
             cJSON *trip = cJSON_CreateObject();
             if (!trip) break;
             cJSON_AddStringToObject(trip, "tripId", a->trip_id);
-            cJSON_AddStringToObject(trip, "stopId", STOP_ID);
-            cJSON_AddStringToObject(trip, "routeId", a->line == 7 ? "renfe:C7" : "renfe:C10");
-            cJSON_AddStringToObject(trip, "routeName", a->line == 7 ? "C-7" : "C-10");
+            cJSON_AddStringToObject(trip, "stopId", RENFE_TT_POZUELO_STOP_ID);
+            cJSON_AddStringToObject(trip, "routeId", a->line == RENFE_LINE_C7 ? RENFE_TT_ROUTE_C7 : RENFE_TT_ROUTE_C10);
+            cJSON_AddStringToObject(trip, "routeName", a->line == RENFE_LINE_C7 ? RENFE_LINE_C7_NAME : RENFE_LINE_C10_NAME);
             cJSON_AddStringToObject(trip, "routeColor",
-                a->line == 7 ? "E53935" : "C4D600");
-            cJSON_AddStringToObject(trip, "stopName", "Pozuelo");
-            cJSON_AddStringToObject(trip, "headsign", "Principe Pio");
+                a->line == RENFE_LINE_C7 ? "E53935" : "C4D600");
+            cJSON_AddStringToObject(trip, "stopName", RENFE_POZUELO_NAME);
+            cJSON_AddStringToObject(trip, "headsign", RENFE_PRINCIPE_PIO_NAME);
             cJSON_AddNumberToObject(trip, "arrivalTime", (double)a->estimated_unix);
             cJSON_AddNumberToObject(trip, "departureTime", (double)a->estimated_unix);
             cJSON_AddBoolToObject(trip, "isRealtime", true);

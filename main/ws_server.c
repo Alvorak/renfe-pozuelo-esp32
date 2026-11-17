@@ -1,4 +1,5 @@
 #include "ws_server.h"
+#include "renfe_railway_ids.h"
 #include "renfe_time_limits.h"
 
 #include <stdbool.h>
@@ -128,14 +129,14 @@ static esp_err_t send_schedule(httpd_handle_t hd, int fd, int limit)
             }
             bool ok = true;
             ok &= cJSON_AddStringToObject(trip, "tripId", arrival->trip_id) != NULL;
-            ok &= cJSON_AddStringToObject(trip, "stopId", "renfe:10002") != NULL;
+            ok &= cJSON_AddStringToObject(trip, "stopId", RENFE_TT_POZUELO_STOP_ID) != NULL;
             ok &= cJSON_AddStringToObject(trip, "routeId",
-                                          arrival->line == 7 ? "renfe:C7" : "renfe:C10") != NULL;
+                                          arrival->line == RENFE_LINE_C7 ? RENFE_TT_ROUTE_C7 : RENFE_TT_ROUTE_C10) != NULL;
             ok &= cJSON_AddStringToObject(trip, "routeName",
-                                          arrival->line == 7 ? "C-7" : "C-10") != NULL;
+                                          arrival->line == RENFE_LINE_C7 ? RENFE_LINE_C7_NAME : RENFE_LINE_C10_NAME) != NULL;
             ok &= cJSON_AddStringToObject(trip, "routeColor",
-                                          arrival->line == 7 ? "E53935" : "C4D600") != NULL;
-            ok &= cJSON_AddStringToObject(trip, "stopName", "Pozuelo") != NULL;
+                                          arrival->line == RENFE_LINE_C7 ? "E53935" : "C4D600") != NULL;
+            ok &= cJSON_AddStringToObject(trip, "stopName", RENFE_POZUELO_NAME) != NULL;
             // La pantalla pinta headsign debajo del nombre de la linea.
             // STOPPED_AT es estacion actual; los otros estados son destino siguiente.
             char headsign[WS_HEADSIGN_BUFFER_BYTES] = "Sin posicion";

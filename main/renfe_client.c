@@ -1,4 +1,5 @@
 #include "renfe_client.h"
+#include "renfe_railway_ids.h"
 #include "renfe_time_limits.h"
 #include "renfe_parser.h"
 #include "wifi_manager.h"
@@ -238,7 +239,7 @@ static esp_err_t download_vehicle_positions(void)
                 }
 
                 // La siguiente parada debe ser Pozuelo.
-                if (strcmp(train->stop_id, "10002") != 0)
+                if (strcmp(train->stop_id, RENFE_POZUELO_STOP_ID) != 0)
                 {
                     continue;
                 }
@@ -250,7 +251,7 @@ static esp_err_t download_vehicle_positions(void)
                 }
 
                 // Debe encontrarse al oeste de Pozuelo.
-                if (train->longitude >= -3.8002)
+                if (train->longitude >= RENFE_POZUELO_PARSER_LON)
                 {
                     continue;
                 }

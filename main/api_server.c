@@ -1,4 +1,5 @@
 #include "api_server.h"
+#include "renfe_railway_ids.h"
 #include "renfe_time_limits.h"
 
 #include <stdbool.h>
@@ -121,11 +122,11 @@ static void add_origin(cJSON *root)
 {
     cJSON *origin = cJSON_CreateObject();
     if (!origin) return;
-    cJSON_AddStringToObject(origin, "stop_id", "10002");
-    cJSON_AddStringToObject(origin, "stop_code", "10002");
-    cJSON_AddStringToObject(origin, "stop_name", "Pozuelo");
-    cJSON_AddNumberToObject(origin, "stop_lat", 40.44761);
-    cJSON_AddNumberToObject(origin, "stop_lon", -3.80020);
+    cJSON_AddStringToObject(origin, "stop_id", RENFE_POZUELO_STOP_ID);
+    cJSON_AddStringToObject(origin, "stop_code", RENFE_POZUELO_STOP_ID);
+    cJSON_AddStringToObject(origin, "stop_name", RENFE_POZUELO_NAME);
+    cJSON_AddNumberToObject(origin, "stop_lat", RENFE_POZUELO_API_LAT);
+    cJSON_AddNumberToObject(origin, "stop_lon", RENFE_POZUELO_API_LON);
     cJSON_AddItemToObject(root, "origin", origin);
 }
 
@@ -135,8 +136,8 @@ static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
     cJSON *row = cJSON_CreateObject();
     if (!row) return;
 
-    const char *line = item->line == 7 ? "C-7" : "C-10";
-    const char *route_id = item->line == 7 ? "C7" : "C10";
+    const char *line = item->line == RENFE_LINE_C7 ? RENFE_LINE_C7_NAME : RENFE_LINE_C10_NAME;
+    const char *route_id = item->line == RENFE_LINE_C7 ? RENFE_ROUTE_C7 : RENFE_ROUTE_C10;
     const char *method = item->source == RENFE_ETA_STOP_TIME ? "stop_time_update" :
         item->source == RENFE_ETA_PROPAGATED ? "propagated_delay" :
         item->source == RENFE_ETA_VEHICLE ? "vehicle_and_schedule" :
@@ -159,7 +160,7 @@ static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
     cJSON_AddStringToObject(row, "route_id", route_id);
     cJSON_AddStringToObject(row, "trip_id", item->trip_id);
     cJSON_AddStringToObject(row, "service_date", service_date);
-    cJSON_AddStringToObject(row, "destination", "Sentido Principe Pio");
+    cJSON_AddStringToObject(row, "destination", RENFE_PRINCIPE_PIO_DESTINATION);
     cJSON_AddStringToObject(row, "departure_at", arrival_iso);
     cJSON_AddStringToObject(row, "scheduled_at", scheduled_iso);
     cJSON_AddNumberToObject(row, "arrival_unix", (double)item->estimated_unix);
@@ -171,7 +172,7 @@ static void add_arrival(cJSON *departures, const renfe_arrival_t *item,
         item->source == RENFE_ETA_VEHICLE ? "renfe_estimated" :
         item->source == RENFE_ETA_CACHED ? "renfe_cached" : "renfe_realtime");
     cJSON_AddStringToObject(row, "route_color",
-        item->line == 7 ? "E53935" : "C4D600");
+        item->line == RENFE_LINE_C7 ? "E53935" : "C4D600");
     cJSON_AddStringToObject(row, "eta_method", method);
     // Informacion opcional: si no hay posicion reciente, no inventarla.
     int64_t position_age = now - item->position_timestamp;
@@ -214,11 +215,11 @@ static esp_err_t arrivals_get_handler(httpd_req_t *req)
     }
 
     add_origin(root);
-    cJSON_AddStringToObject(root, "destination_query", "Príncipe Pío");
+    cJSON_AddStringToObject(root, "destination_query", RENFE_PRINCIPE_PIO_QUERY_NAME);
     cJSON *lines = cJSON_AddArrayToObject(root, "lines");
     if (lines) {
-        cJSON_AddItemToArray(lines, cJSON_CreateString("C-7"));
-        cJSON_AddItemToArray(lines, cJSON_CreateString("C-10"));
+        cJSON_AddItemToArray(lines, cJSON_CreateString(RENFE_LINE_C7_NAME));
+        cJSON_AddItemToArray(lines, cJSON_CreateString(RENFE_LINE_C10_NAME));
     }
     cJSON_AddStringToObject(root, "source",
                              fresh && snapshot.count > 0

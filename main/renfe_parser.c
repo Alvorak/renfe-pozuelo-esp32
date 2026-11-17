@@ -1,4 +1,5 @@
 #include "renfe_parser.h"
+#include "renfe_railway_ids.h"
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -11,9 +12,6 @@
 #include "cJSON.h"
 
 static const char *TAG = "RENFE_PARSER";
-
-#define POZUELO_LAT 40.4476
-#define POZUELO_LON -3.8002
 
 // Asignador de cJSON en PSRAM.
 static void *psram_malloc(size_t size)
@@ -119,8 +117,8 @@ static const char *status_name(int status)
 
 static bool near_pozuelo(double lat, double lon)
 {
-    double dlat = (lat - POZUELO_LAT) * 111.2;
-    double dlon = (lon - POZUELO_LON) * 84.0;
+    double dlat = (lat - RENFE_POZUELO_PARSER_LAT) * 111.2;
+    double dlon = (lon - RENFE_POZUELO_PARSER_LON) * 84.0;
 
     return sqrt(dlat * dlat + dlon * dlon) < 10.0;
 }
@@ -239,10 +237,10 @@ esp_err_t renfe_parse_vehicles(
                 : NULL;
 
         bool c7 = line_matches(
-            label_str, route_str, "C7");
+            label_str, route_str, RENFE_ROUTE_C7);
 
         bool c10 = line_matches(
-            label_str, route_str, "C10");
+            label_str, route_str, RENFE_ROUTE_C10);
 
         if (!c7 && !c10)
         {
@@ -308,7 +306,7 @@ esp_err_t renfe_parse_vehicles(
                 candidate->route_id,
                 sizeof(candidate->route_id),
                 "%s",
-                c7 ? "C7" : "C10");
+                c7 ? RENFE_ROUTE_C7 : RENFE_ROUTE_C10);
         }
 
         copy_json_string(

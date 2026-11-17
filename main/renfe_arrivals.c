@@ -1,4 +1,5 @@
 #include "renfe_arrivals.h"
+#include "renfe_railway_ids.h"
 #include "renfe_time_limits.h"
 #include "gtfs_index.h"
 #include "gtfs_upstream.h"
@@ -55,10 +56,10 @@ static bool vehicle_has_passed(const renfe_parse_result_t *vehicles,
         int64_t age = (int64_t)now - v->timestamp;
         if (age < -RENFE_FUTURE_TIMESTAMP_TOLERANCE_SECONDS || age > RENFE_FEED_MAX_AGE_SECONDS) return false;
         // 10001: Aravaca; 10000: Principe Pio.
-        if (strcmp(v->stop_id, "10001") == 0 ||
-            strcmp(v->stop_id, "10000") == 0) return true;
+        if (strcmp(v->stop_id, RENFE_ARAVACA_STOP_ID) == 0 ||
+            strcmp(v->stop_id, RENFE_PRINCIPE_PIO_STOP_ID) == 0) return true;
         // Ya detenido en Pozuelo: no anunciar como proxima llegada.
-        if (strcmp(v->stop_id, "10002") == 0 &&
+        if (strcmp(v->stop_id, RENFE_POZUELO_STOP_ID) == 0 &&
             v->current_status == 1) return true;
         return false;
     }
@@ -70,9 +71,9 @@ static bool vehicle_has_passed(const renfe_parse_result_t *vehicles,
 static const char *station_name(const char *stop_id)
 {
     static const struct { const char *id; const char *name; } stops[] = {
-        {"10000", "Principe Pio"},
-        {"10001", "Aravaca"},
-        {"10002", "Pozuelo"},
+        {RENFE_PRINCIPE_PIO_STOP_ID, RENFE_PRINCIPE_PIO_NAME},
+        {RENFE_ARAVACA_STOP_ID, RENFE_ARAVACA_NAME},
+        {RENFE_POZUELO_STOP_ID, RENFE_POZUELO_NAME},
         {"10005", "Las Rozas"},
         {"10007", "Majadahonda"},
         {"10010", "El Barrial"},
